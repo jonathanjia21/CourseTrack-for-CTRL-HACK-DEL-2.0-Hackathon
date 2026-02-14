@@ -30,14 +30,14 @@
                 </div>
 
                 <div class="form-group">
-                    <label>Syllabus PDF</label>
+                    <label>Syllabus PDF (Multiple files supported)</label>
                     <div class="dropzone" id="dropzone" role="button" tabindex="0" aria-label="Upload syllabus PDF">
                         <div class="dropzone-icon">PDF</div>
-                        <div class="dropzone-text">Drag and drop your PDF here</div>
-                        <div class="dropzone-hint">or click to browse</div>
-                        <div class="file-name" id="fileName"></div>
+                        <div class="dropzone-text">Drag and drop your PDFs here</div>
+                        <div class="dropzone-hint">or click to browse (multiple files supported)</div>
                     </div>
-                    <input type="file" id="fileInput" class="file-input" accept=".pdf">
+                    <input type="file" id="fileInput" class="file-input" accept=".pdf" multiple>
+                    <div class="file-list" id="fileList"></div>
                 </div>
 
                 <button type="submit" id="submitBtn" disabled>
@@ -60,6 +60,20 @@
             </div>
             <div class="loading-title">Mapping your syllabus</div>
             <div class="loading-status" id="loadingStatus">Scanning dates and milestones...</div>
+        </div>
+    </div>
+
+    <div class="preview-modal" id="previewModal" aria-hidden="true">
+        <div class="preview-content">
+            <div class="preview-header">
+                <h2>Review Assignments</h2>
+                <p class="preview-subtitle">Uncheck any assignments you want to exclude</p>
+            </div>
+            <div class="preview-body" id="previewBody"></div>
+            <div class="preview-footer">
+                <button type="button" class="btn-secondary" id="cancelPreview">Cancel</button>
+                <button type="button" class="btn-primary" id="confirmGenerate">Generate Calendar</button>
+            </div>
         </div>
     </div>
 
