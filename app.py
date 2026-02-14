@@ -4,12 +4,12 @@ import re
 from io import BytesIO
 from datetime import datetime
 
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify, send_file, render_template
 from flask_cors import CORS
 import pdfplumber
 from openai import OpenAI
 from dotenv import load_dotenv
-from ics_converter import json_to_ics
+from backend.ics_converter import json_to_ics
 
 load_dotenv()  # Load .env file
 
@@ -197,6 +197,10 @@ def call_openai_to_extract_assignments(text: str) -> list:
                 raise RuntimeError(f"Failed to parse JSON from model output: {e}\nOutput was:\n{content}")
         raise RuntimeError(f"Model did not return valid JSON. Output:\n{content}")
 
+
+@app.route("/", methods=["GET"])
+def home():
+    return render_template("/index.html")
 
 @app.route("/extract_assignments", methods=["POST"])
 def extract_assignments():
