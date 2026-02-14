@@ -4,14 +4,17 @@ import re
 from io import BytesIO
 from datetime import datetime
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file
+from flask_cors import CORS
 import pdfplumber
 from openai import OpenAI
 from dotenv import load_dotenv
+from ics_converter import json_to_ics
 
 load_dotenv()  # Load .env file
 
 app = Flask(__name__)
+CORS(app)  # Enable CORS for all routes
 
 # Use Featherless.AI (OpenAI-compatible API)
 client = OpenAI(
@@ -234,6 +237,106 @@ def extract_assignments():
         cleaned.append({"title": title, "due_date": due_iso})
 
     return jsonify(cleaned)
+
+
+@app.route("/json_to_ics", methods=["POST"])
+def json_to_ics_endpoint():
+    """Convert JSON assignments to ICS calendar file"""
+    try:
+        data = request.get_json()
+    except Exception:
+        return jsonify({"error": "invalid JSON"}), 400
+    
+    if not isinstance(data, list):
+        return jsonify({"error": "expected JSON array of assignments"}), 400
+    
+    course_name = request.args.get("course_name", "Assignments")
+    
+    try:
+        ics_content = json_to_ics(data, course_name)
+    except Exception as e:
+        return jsonify({"error": f"ICS conversion failed: {e}"}), 500
+    
+    return send_file(
+        BytesIO(ics_content.encode('utf-8')),
+        mimetype="text/calendar",
+        as_attachment=True,
+        download_name=f"{course_name}.ics"
+    )
+
+
+@app.route("/pdf_to_ics", methods=["POST"])
+def pdf_to_ics_endpoint():
+    """Extract assignments from PDF and return as ICS calendar file"""
+    if "file" not in request.files:
+        return jsonify({"error": "missing file (form field 'file')"}), 400
+
+    file = request.files["file"]
+    if file.filename == "":
+        return jsonify({"error": "empty filename"}), 400
+
+    pdf_bytes = None
+    try:
+        pdf_bytes = file.read()
+    except Exception:
+        return jsonify({"error": "could not read uploaded file"}), 400
+
+    if not pdf_bytes:
+        return jsonify({"error": "empty file"}), 400
+
+    text = extract_text_from_pdf_bytes(pdf_bytes)
+    if not text.strip():
+        return jsonify({"error": "no extractable text in PDF"}), 400
+
+    # Use local fallback or API
+    if USE_LOCAL_FALLBACK:
+        items = parse_assignments_local(text)
+    else:
+        try:
+            items = call_openai_to_extract_assignments(text)
+        except RuntimeError as e:
+            return jsonify({"error": str(e)}), 500
+
+    # Validate and normalize dates
+    cleaned = []
+    for it in items:
+        title = it.get("title") if isinstance(it, dict) else None
+        due = it.get("due_date") if isinstance(it, dict) else None
+        if not title:
+            continue
+        if due is None:
+            due_iso = None
+        else:
+            try:
+                due_dt = datetime.fromisoformat(due)
+                due_iso = due_dt.date().isoformat()
+            except Exception:
+                parsed = None
+                for fmt in ("%b %d, %Y", "%B %d, %Y", "%Y-%m-%d", "%m/%d/%Y", "%m/%d/%y"):
+                    try:
+                        parsed = datetime.strptime(due, fmt)
+                        break
+                    except Exception:
+                        continue
+                if parsed:
+                    due_iso = parsed.date().isoformat()
+                else:
+                    due_iso = None
+        cleaned.append({"title": title, "due_date": due_iso})
+
+    # Generate ICS
+    course_name = request.args.get("course_name", "Course Assignments")
+    try:
+        ics_content = json_to_ics(cleaned, course_name)
+    except Exception as e:
+        return jsonify({"error": f"ICS conversion failed: {e}"}), 500
+
+    return send_file(
+        BytesIO(ics_content.encode('utf-8')),
+        mimetype="text/calendar",
+        as_attachment=True,
+        download_name=f"{course_name}.ics"
+    )
 
 
 if __name__ == "__main__":
