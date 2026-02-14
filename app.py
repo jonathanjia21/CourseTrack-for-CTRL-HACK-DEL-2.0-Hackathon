@@ -10,6 +10,7 @@ import pdfplumber
 from openai import OpenAI
 from dotenv import load_dotenv
 from backend.ics_converter import json_to_ics
+from backend.config.mongo import course_collection
 
 load_dotenv()  # Load .env file
 
