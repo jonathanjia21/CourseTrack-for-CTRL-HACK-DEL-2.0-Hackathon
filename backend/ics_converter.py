@@ -28,6 +28,7 @@ def json_to_ics(assignments: list, course_name: str = "Assignments") -> str:
         
         title = assignment.get('title', 'Assignment')
         due_date_str = assignment.get('due_date')
+        event_type = assignment.get('type', 'assignment').capitalize()
         
         if not due_date_str:
             continue
@@ -47,9 +48,9 @@ def json_to_ics(assignments: list, course_name: str = "Assignments") -> str:
         event.add('dtend', due_date)
         event.add('dtstamp', datetime.now())
         event.add('uid', f'{title}-{due_date_str}@coursetrack')
-        event.add('description', f'Assignment due: {title}')
+        event.add('description', f'{event_type} due: {title}')
         event.add('status', 'CONFIRMED')
-        event.add('categories', ['Assignment'])
+        event.add('categories', [event_type])
         
         # All-day event
         event['dtstart'].params['VALUE'] = 'DATE'

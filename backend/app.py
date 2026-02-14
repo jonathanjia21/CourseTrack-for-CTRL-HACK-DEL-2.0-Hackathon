@@ -38,53 +38,73 @@ def extract_text_from_pdf_bytes(pdf_bytes: bytes) -> str:
         return ""
 
 
-def parse_assignments_local(text: str) -> list:
-    """Local regex-based assignment extraction (fallback when API is unavailable)"""
-    assignments = []
-    
-    # Pattern for common assignment keywords followed by potential dates
-    # Matches: A1, A2, Assignment 1, Homework 1, Project, Quiz, etc.
-    assignment_pattern = r'(?:^|\n)\s*([A-Z][0-9]+|Assignment\s+[0-9]+|Homework\s+[0-9]+|Project(?:\s+\w+)?|Quiz(?:\s+\w+)?)\s+.*?(\w+\s+\d{1,2}(?:st|nd|rd|th)?(?:,?\s+\d{4})?|\d{4}-\d{2}-\d{2}|\d{1,2}/\d{1,2}/\d{2,4})'
-    
-    # Also look for grading tables with Component/Due/Date columns
-    lines = text.split('\n')
-    in_table = False
+def parse_events_local(text: str) -> list:
+    """Local regex-based event extraction (assignments, tests, quizzes, etc.)"""
+    events = []
     current_year = datetime.now().year
+    lines = text.split('\n')
+    
+    # Pattern to find various event types with dates in grading tables
+    # Matches: Component, Due, etc. headers
+    in_table = False
+    current_table_type = None
     
     for i, line in enumerate(lines):
-        # Check if we're in a grading table
-        if re.search(r'Component.*Due.*Percentage', line, re.IGNORECASE):
+        # Detect table headers
+        if re.search(r'Component.*Due.*(?:Percentage|%)', line, re.IGNORECASE):
             in_table = True
+            current_table_type = 'grading'
+            continue
+        
+        # Detect test/exam section headers
+        if re.search(r'(?:Test|Exam|Quiz|Final).*(?:Date|When|Schedule)', line, re.IGNORECASE):
+            in_table = True
+            current_table_type = 'test'
             continue
         
         if in_table:
             # Stop at empty lines or section breaks
-            if not line.strip() or re.match(r'^[A-Z][a-z]+\s+[A-Z]', line):
+            if not line.strip() or (line.startswith('#') or re.match(r'^[A-Z][a-z]+\s+[A-Z]', line)):
                 in_table = False
                 continue
             
-            # Parse table rows: "A1 Jan 28th Feb 13th 13%"
             parts = line.split()
-            if len(parts) >= 3:
-                title = parts[0]
-                # Look for month patterns
-                for j, part in enumerate(parts[1:], 1):
-                    if re.match(r'^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)', part, re.IGNORECASE):
-                        # Next parts might be: 28th, Feb, 13th or just 28th
-                        date_str = ' '.join(parts[j:min(j+3, len(parts))])
-                        try:
-                            # Try to parse date
-                            parsed_date = parse_flexible_date(date_str, current_year)
-                            if parsed_date:
-                                assignments.append({
-                                    "title": title,
-                                    "due_date": parsed_date
-                                })
-                                break
-                        except Exception:
-                            continue
+            if len(parts) < 2:
+                continue
+            
+            title = parts[0].strip()
+            
+            # Skip header-like lines
+            if title.lower() in ['component', 'due', 'date', 'percentage', 'weight']:
+                continue
+            
+            # Look for date patterns in the parts
+            for j, part in enumerate(parts[1:], 1):
+                if re.match(r'^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)', part, re.IGNORECASE):
+                    # Extract date string
+                    date_str = ' '.join(parts[j:min(j+3, len(parts))])
+                    parsed_date = parse_flexible_date(date_str, current_year)
+                    
+                    if parsed_date:
+                        # Determine event type
+                        event_type = 'assignment'
+                        if 'test' in title.lower() or 'exam' in title.lower():
+                            event_type = 'test'
+                        elif 'quiz' in title.lower():
+                            event_type = 'quiz'
+                        elif 'project' in title.lower():
+                            event_type = 'project'
+                        elif 'presentation' in title.lower():
+                            event_type = 'presentation'
+                        
+                        events.append({
+                            "title": title,
+                            "due_date": parsed_date,
+                            "type": event_type
+                        })
+                        break
     
-    return assignments
+    return events
 
 
 def parse_flexible_date(date_str: str, default_year: int = None) -> str:
@@ -133,15 +153,18 @@ def parse_flexible_date(date_str: str, default_year: int = None) -> str:
 
 def call_openai_to_extract_assignments(text: str) -> list:
     prompt_system = (
-        "You are an assistant that extracts assignment titles and due dates from raw document text. "
-        "Respond with a JSON array only, where each item is an object with `title` and `due_date`. "
+        "You are an assistant that extracts event information from course syllabus text. "
+        "Extract assignments, tests, quizzes, exams, projects, presentations, and other deadlines. "
+        "Respond with a JSON array only, where each item has: `title`, `due_date`, and `type`. "
+        "`type` must be one of: assignment, test, quiz, exam, project, presentation, or other. "
         "`due_date` must be in ISO format `YYYY-MM-DD` or `null` if unknown. "
         "Do not add any extra explanation or wrapper text."
     )
 
     prompt_user = (
-        "Extract assignment titles and their due dates from the following text. "
+        "Extract all course events (assignments, tests, quizzes, exams, projects, etc.) with their due dates. "
         "If a date is written in words or multiple formats, normalize it to YYYY-MM-DD. "
+        "Include the type of event (assignment, test, quiz, exam, project, presentation, etc.). "
         f"Text:\n\n{text}"
     )
 
@@ -199,7 +222,7 @@ def extract_assignments():
 
     # Use local fallback or API
     if USE_LOCAL_FALLBACK:
-        items = parse_assignments_local(text)
+        items = parse_events_local(text)
     else:
         try:
             items = call_openai_to_extract_assignments(text)
@@ -211,6 +234,8 @@ def extract_assignments():
     for it in items:
         title = it.get("title") if isinstance(it, dict) else None
         due = it.get("due_date") if isinstance(it, dict) else None
+        event_type = it.get("type", "assignment") if isinstance(it, dict) else "assignment"
+        
         if not title:
             continue
         if due is None:
@@ -234,7 +259,11 @@ def extract_assignments():
                     due_iso = parsed.date().isoformat()
                 else:
                     due_iso = None
-        cleaned.append({"title": title, "due_date": due_iso})
+        cleaned.append({
+            "title": title, 
+            "due_date": due_iso,
+            "type": event_type
+        })
 
     return jsonify(cleaned)
 
@@ -290,7 +319,7 @@ def pdf_to_ics_endpoint():
 
     # Use local fallback or API
     if USE_LOCAL_FALLBACK:
-        items = parse_assignments_local(text)
+        items = parse_events_local(text)
     else:
         try:
             items = call_openai_to_extract_assignments(text)
@@ -302,6 +331,8 @@ def pdf_to_ics_endpoint():
     for it in items:
         title = it.get("title") if isinstance(it, dict) else None
         due = it.get("due_date") if isinstance(it, dict) else None
+        event_type = it.get("type", "assignment") if isinstance(it, dict) else "assignment"
+        
         if not title:
             continue
         if due is None:
@@ -322,7 +353,11 @@ def pdf_to_ics_endpoint():
                     due_iso = parsed.date().isoformat()
                 else:
                     due_iso = None
-        cleaned.append({"title": title, "due_date": due_iso})
+        cleaned.append({
+            "title": title, 
+            "due_date": due_iso,
+            "type": event_type
+        })
 
     # Generate ICS
     course_name = request.args.get("course_name", "Course Assignments")
