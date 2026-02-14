@@ -4,46 +4,66 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CourseTrack - Syllabus to Calendar</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/index.css') }}"> 
-    
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/index.css') }}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
 </head>
 <body>
-    <div class="container">
-        <h1>📋 CourseTrack</h1>
-        <p class="subtitle">Convert your syllabus to a calendar file</p>
-
-        <form id="uploadForm">
-            <div class="form-group">
-                <label for="courseName">Course Name (Optional)</label>
-                <input type="text" id="courseName" placeholder="e.g., EECS 2101, Math 201" value="Course Assignments">
+    <div class="page">
+        <header class="hero">
+            <div class="eyebrow">Syllabus to calendar, reimagined</div>
+            <h1>CourseTrack</h1>
+            <p class="subtitle">Drop a syllabus and get a clean .ics file ready for your calendar.</p>
+            <div class="signals">
+                <span>PDF in</span>
+                <span>Deadlines parsed</span>
+                <span>Calendar out</span>
             </div>
+        </header>
 
-            <div class="form-group">
-                <label>Syllabus PDF</label>
-                <div class="dropzone" id="dropzone">
-                    <div class="dropzone-icon">📄</div>
-                    <div class="dropzone-text">Drag and drop your PDF here</div>
-                    <div class="dropzone-hint">or click to browse</div>
-                    <div class="file-name" id="fileName"></div>
+        <section class="panel">
+            <form id="uploadForm">
+                <div class="form-group">
+                    <label for="courseName">Course Name (Optional)</label>
+                    <input type="text" id="courseName" placeholder="e.g., EECS 2101, Math 201" value="Course Assignments">
                 </div>
-                <input type="file" id="fileInput" class="file-input" accept=".pdf">
-            </div>
 
-            <button type="submit" id="submitBtn" disabled>
-                ⬇️ Generate Calendar
-            </button>
+                <div class="form-group">
+                    <label>Syllabus PDF</label>
+                    <div class="dropzone" id="dropzone" role="button" tabindex="0" aria-label="Upload syllabus PDF">
+                        <div class="dropzone-icon">PDF</div>
+                        <div class="dropzone-text">Drag and drop your PDF here</div>
+                        <div class="dropzone-hint">or click to browse</div>
+                        <div class="file-name" id="fileName"></div>
+                    </div>
+                    <input type="file" id="fileInput" class="file-input" accept=".pdf">
+                </div>
 
-            <div class="loading" id="loading">
-                <div class="spinner"></div>
-                <div class="loading-text">Processing your syllabus...</div>
-            </div>
+                <button type="submit" id="submitBtn" disabled>
+                    Generate Calendar
+                </button>
 
-            <div class="error" id="error"></div>
-            <div class="success" id="success"></div>
-        </form>
+                <div class="error" id="error"></div>
+                <div class="success" id="success"></div>
+            </form>
+        </section>
     </div>
 
-    <script src="static/js/index.js"> </script>
-    
+    <div class="loading-overlay" id="loadingOverlay" aria-hidden="true">
+        <div class="loading-card" role="status" aria-live="polite">
+            <div class="loading-rings">
+                <span class="ring ring-one"></span>
+                <span class="ring ring-two"></span>
+                <span class="ring ring-three"></span>
+                <span class="scan-line"></span>
+            </div>
+            <div class="loading-title">Mapping your syllabus</div>
+            <div class="loading-status" id="loadingStatus">Scanning dates and milestones...</div>
+        </div>
+    </div>
+
+    <script src="static/js/index.js"></script>
+
 </body>
 </html>
