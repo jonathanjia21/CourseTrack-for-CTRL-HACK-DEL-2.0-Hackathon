@@ -140,7 +140,12 @@ uploadForm.addEventListener('submit', async (e) => {
             }
 
             const assignments = await response.json();
-            extractedAssignments = [...extractedAssignments, ...assignments];
+            // Tag each assignment with its source file
+            const taggedAssignments = assignments.map(a => ({
+                ...a,
+                source: file.name
+            }));
+            extractedAssignments = [...extractedAssignments, ...taggedAssignments];
         }
 
         setLoading(false);
@@ -169,18 +174,46 @@ function renderPreview() {
         return;
     }
 
-    previewBody.innerHTML = extractedAssignments.map((assignment, index) => `
-        <div class="assignment-item" data-index="${index}">
-            <input type="checkbox" class="assignment-checkbox" id="assignment-${index}" checked>
-            <div class="assignment-info">
-                <label for="assignment-${index}" class="assignment-title">${escapeHtml(assignment.title || 'Untitled')}</label>
-                <div class="assignment-meta">
-                    <span class="assignment-date">📅 ${assignment.due_date || 'No date'}</span>
-                    <span class="assignment-type">${assignment.type || 'assignment'}</span>
+    // Group assignments by source file
+    const groupedAssignments = {};
+    extractedAssignments.forEach((assignment, index) => {
+        const source = assignment.source || 'Unknown source';
+        if (!groupedAssignments[source]) {
+            groupedAssignments[source] = [];
+        }
+        groupedAssignments[source].push({ ...assignment, originalIndex: index });
+    });
+
+    // Render grouped assignments
+    let html = '';
+    Object.keys(groupedAssignments).forEach(source => {
+        const assignments = groupedAssignments[source];
+        html += `
+            <div class="file-group">
+                <div class="file-group-header">
+                    <span class="file-badge">📄</span>
+                    <span class="file-group-name">${escapeHtml(source)}</span>
+                    <span class="file-group-count">${assignments.length} assignment${assignments.length !== 1 ? 's' : ''}</span>
+                </div>
+                <div class="file-group-items">
+                    ${assignments.map(assignment => `
+                        <div class="assignment-item" data-index="${assignment.originalIndex}">
+                            <input type="checkbox" class="assignment-checkbox" id="assignment-${assignment.originalIndex}" checked>
+                            <div class="assignment-info">
+                                <label for="assignment-${assignment.originalIndex}" class="assignment-title">${escapeHtml(assignment.title || 'Untitled')}</label>
+                                <div class="assignment-meta">
+                                    <span class="assignment-date">📅 ${assignment.due_date || 'No date'}</span>
+                                    <span class="assignment-type">${assignment.type || 'assignment'}</span>
+                                </div>
+                            </div>
+                        </div>
+                    `).join('')}
                 </div>
             </div>
-        </div>
-    `).join('');
+        `;
+    });
+
+    previewBody.innerHTML = html;
 
     // Add checkbox listeners
     previewBody.querySelectorAll('.assignment-checkbox').forEach(checkbox => {
@@ -215,13 +248,23 @@ confirmGenerate.addEventListener('click', async () => {
             return;
         }
 
+        // Prefix titles with course code from filename
+        const prefixedAssignments = checkedAssignments.map(assignment => {
+            const courseCode = extractCourseCode(assignment.source);
+            const prefix = courseCode ? `${courseCode} - ` : '';
+            return {
+                ...assignment,
+                title: `${prefix}${assignment.title}`
+            };
+        });
+
         const course = courseName.value.trim() || 'Course Assignments';
         const response = await fetch(`/json_to_ics?course_name=${encodeURIComponent(course)}`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify(checkedAssignments)
+            body: JSON.stringify(prefixedAssignments)
         });
 
         if (!response.ok) {
@@ -257,6 +300,36 @@ confirmGenerate.addEventListener('click', async () => {
         submitBtn.disabled = false;
     }
 });
+
+function extractCourseCode(filename) {
+    if (!filename) return null;
+    
+    // Remove file extension
+    const nameWithoutExt = filename.replace(/\.pdf$/i, '');
+    
+    // Try to match common course code patterns
+    // Examples: EECS3101, EECS 3101, CS-101, MATH201, etc.
+    const patterns = [
+        /([A-Z]{2,4}\s*\d{3,4}[A-Z]?)/i,  // EECS3101, EECS 3101, CS101
+        /([A-Z]{2,4}-\d{3,4}[A-Z]?)/i,    // CS-101, MATH-201
+    ];
+    
+    for (const pattern of patterns) {
+        const match = nameWithoutExt.match(pattern);
+        if (match) {
+            // Normalize spacing: EECS3101 → EECS 3101
+            return match[1].replace(/([A-Z]+)(\d)/, '$1 $2').toUpperCase();
+        }
+    }
+    
+    // Fallback: use first word or abbreviation from filename
+    const firstWord = nameWithoutExt.split(/[_\-\s]+/)[0];
+    if (firstWord && firstWord.length <= 15) {
+        return firstWord;
+    }
+    
+    return null;
+}
 
 function showError(msg) {
     error.textContent = msg;

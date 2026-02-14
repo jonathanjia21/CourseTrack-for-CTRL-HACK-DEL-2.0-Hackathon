@@ -438,6 +438,49 @@ button:disabled {
     max-height: 50vh;
 }
 
+.file-group {
+    margin-bottom: 24px;
+}
+
+.file-group:last-child {
+    margin-bottom: 0;
+}
+
+.file-group-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    background: rgba(255, 191, 31, 0.15);
+    border-left: 3px solid var(--accent);
+    border-radius: 8px;
+    margin-bottom: 10px;
+}
+
+.file-badge {
+    font-size: 16px;
+}
+
+.file-group-name {
+    flex: 1;
+    font-weight: 600;
+    font-size: 13px;
+    color: #1a102e;
+}
+
+.file-group-count {
+    font-size: 11px;
+    color: #5f5c74;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.file-group-items {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
 .assignment-item {
     display: flex;
     gap: 14px;
@@ -445,7 +488,7 @@ button:disabled {
     background: linear-gradient(135deg, #fef6ff 0%, #eefbff 100%);
     border: 1px solid rgba(10, 10, 15, 0.1);
     border-radius: 12px;
-    margin-bottom: 12px;
+    margin-bottom: 0;
     transition: all 0.2s;
 }
 
