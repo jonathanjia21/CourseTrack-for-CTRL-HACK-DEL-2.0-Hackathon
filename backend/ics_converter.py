@@ -1,7 +1,7 @@
 """
 Utility to convert extracted assignments JSON to iCalendar (.ics) format.
 """
-from datetime import datetime
+from datetime import datetime, timedelta
 from icalendar import Calendar, Event
 
 
@@ -35,6 +35,8 @@ def json_to_ics(assignments: list, course_name: str = "Assignments") -> str:
         try:
             # Parse due date (YYYY-MM-DD format)
             due_date = datetime.fromisoformat(due_date_str).date()
+            # Shift forward by 1 day to compensate for eClass timezone/display issue
+            due_date = due_date + timedelta(days=1)
         except Exception:
             continue
         
