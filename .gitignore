@@ -62,5 +62,7 @@ htmlcov/
 Thumbs.db
 
 # ICS files
-
 *.ics
+
+# Google Calendar OAuth Token (sensitive)
+token.json

@@ -5,20 +5,41 @@ from io import BytesIO
 from datetime import datetime
 import hashlib
 import requests
-from flask import Flask, request, jsonify, send_file, render_template
+from flask import Flask, request, jsonify, send_file, render_template, redirect, url_for, session
 from flask_cors import CORS
 import pdfplumber
 from dotenv import load_dotenv
 from pymongo.errors import DuplicateKeyError
+from google.oauth2.credentials import Credentials
+from google.auth.transport.requests import Request
+from google_auth_oauthlib.flow import Flow
+from googleapiclient.discovery import build
+import pickle
 
 from backend.ics_converter import json_to_ics
 from backend.config.mongo import course_collection
 from backend.study_guide_generator import generate_study_guide_pdf
 
-load_dotenv()
+load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
 
 app = Flask(__name__)
 CORS(app)
+app.secret_key = os.getenv("SECRET_KEY", "dev-secret-key-change-in-production")
+
+# ----------------------------
+# Session Configuration (Fixes "State mismatch" on localhost)
+# ----------------------------
+app.config["SESSION_COOKIE_SECURE"] = False  # Allow cookies over HTTP (for localhost)
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"  # Allow cookies in redirects
+
+# ----------------------------
+# Google Calendar Configuration
+# ----------------------------
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
+GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:5000/oauth2callback")
+GOOGLE_SCOPES = ["https://www.googleapis.com/auth/calendar"]
+TOKEN_FILE = "token.json"
 
 # ----------------------------
 # OpenRouter Configuration
@@ -303,6 +324,137 @@ Generate practical, actionable guidance that helps the student succeed in this c
             except Exception as e:
                 raise RuntimeError(f"Failed to parse JSON from model output: {e}\nOutput was:\n{content}")
         raise RuntimeError(f"Model did not return valid JSON.\nOutput:\n{content}")
+
+
+# ----------------------------
+# Google Calendar Helper Functions
+# ----------------------------
+def get_google_calendar_service():
+    """Get authenticated Google Calendar service."""
+    creds = None
+    
+    # Load existing token if available
+    if os.path.exists(TOKEN_FILE):
+        try:
+            with open(TOKEN_FILE, 'rb') as token:
+                creds = pickle.load(token)
+        except Exception:
+            pass
+    
+    # Refresh or create new credentials
+    if creds and creds.expired and creds.refresh_token:
+        try:
+            creds.refresh(Request())
+        except Exception:
+            creds = None
+    
+    return creds
+
+
+def save_google_token(creds):
+    """Save Google OAuth token to file."""
+    with open(TOKEN_FILE, 'wb') as token:
+        pickle.dump(creds, token)
+
+
+def create_google_calendar_event(service, event_title: str, due_date: str, calendar_id: str = "primary"):
+    """Create a single event in Google Calendar.
+    
+    Args:
+        service: Authenticated Google Calendar service
+        event_title: Title of the event
+        due_date: Due date in YYYY-MM-DD format
+        calendar_id: Calendar ID (default: primary)
+    
+    Returns:
+        Event object if successful, None otherwise
+    """
+    try:
+        event = {
+            'summary': event_title,
+            'start': {'date': due_date},
+            'end': {'date': due_date},
+            'reminders': {
+                'useDefault': True,
+            }
+        }
+        
+        created_event = service.events().insert(
+            calendarId=calendar_id,
+            body=event
+        ).execute()
+        
+        return created_event
+    except Exception as e:
+        print(f"Error creating event: {e}")
+        return None
+
+
+def upload_assignments_to_google_calendar(assignments: list, course_name: str, credentials):
+    """Upload all assignments to Google Calendar.
+    
+    Args:
+        assignments: List of assignment dicts with 'title' and 'due_date'
+        course_name: Name of the course/calendar
+        credentials: Google OAuth credentials
+    
+    Returns:
+        Dict with success status and calendar info
+    """
+    try:
+        service = build('calendar', 'v3', credentials=credentials)
+        
+        # Create a new calendar for this course
+        calendar_body = {
+            'summary': course_name,
+            'description': f'Assignments for {course_name}',
+            'timeZone': 'UTC'
+        }
+        
+        calendar = service.calendarList().list().execute()
+        existing_calendars = calendar.get('items', [])
+        
+        # Check if calendar already exists
+        calendar_id = None
+        for cal in existing_calendars:
+            if cal.get('summary') == course_name:
+                calendar_id = cal.get('id')
+                break
+        
+        # Create new calendar if it doesn't exist
+        if not calendar_id:
+            created_calendar = service.calendars().insert(body=calendar_body).execute()
+            calendar_id = created_calendar.get('id')
+        
+        # Add events to calendar
+        created_events = 0
+        for assignment in assignments:
+            title = assignment.get('title', 'Assignment')
+            due_date = assignment.get('due_date')
+            
+            if due_date:
+                result = create_google_calendar_event(
+                    service, 
+                    title, 
+                    due_date, 
+                    calendar_id
+                )
+                if result:
+                    created_events += 1
+        
+        return {
+            'success': True,
+            'calendar_id': calendar_id,
+            'calendar_name': course_name,
+            'events_created': created_events,
+            'total_assignments': len(assignments)
+        }
+    
+    except Exception as e:
+        return {
+            'success': False,
+            'error': str(e)
+        }
 
 
 # ----------------------------
@@ -638,6 +790,163 @@ def download_study_guide():
         )
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+@app.route("/google_auth_start", methods=["POST"])
+def google_auth_start():
+    """Start Google OAuth flow."""
+    if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
+        return jsonify({"error": "Google Calendar not configured"}), 400
+    
+    try:
+        flow = Flow.from_client_config(
+            {
+                "installed": {
+                    "client_id": GOOGLE_CLIENT_ID,
+                    "client_secret": GOOGLE_CLIENT_SECRET,
+                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                    "token_uri": "https://oauth2.googleapis.com/token",
+                    "redirect_uris": [GOOGLE_REDIRECT_URI]
+                }
+            },
+            scopes=GOOGLE_SCOPES,
+            redirect_uri=GOOGLE_REDIRECT_URI
+        )
+        
+        # Get authorization URL and state
+        auth_url, state = flow.authorization_url(access_type='offline', prompt='consent')
+        
+        # Store state in session for callback verification  
+        session['oauth_state'] = state
+        
+        return jsonify({"auth_url": auth_url})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/oauth2callback", methods=["GET"])
+def oauth2callback():
+    """Google OAuth callback."""
+    auth_code = request.args.get('code')
+    state = request.args.get('state')
+    
+    if not auth_code:
+        return jsonify({"error": "No authorization code"}), 400
+    
+    # Verify state matches
+    if state != session.get('oauth_state'):
+        return jsonify({"error": "State mismatch"}), 400
+    
+    try:
+        # Recreate flow with redirect_uri
+        flow = Flow.from_client_config(
+            {
+                "installed": {
+                    "client_id": GOOGLE_CLIENT_ID,
+                    "client_secret": GOOGLE_CLIENT_SECRET,
+                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                    "token_uri": "https://oauth2.googleapis.com/token",
+                    "redirect_uris": [GOOGLE_REDIRECT_URI]
+                }
+            },
+            scopes=GOOGLE_SCOPES,
+            redirect_uri=GOOGLE_REDIRECT_URI
+        )
+        
+        # Exchange code for credentials
+        flow.fetch_token(code=auth_code)
+        credentials = flow.credentials
+        
+        # Save token for future use
+        save_google_token(credentials)
+        
+        return redirect(f"/?success=true")
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/get_calendar_events", methods=["POST"])
+def get_calendar_events():
+    """Get events from a Google Calendar."""
+    payload = request.get_json()
+    calendar_id = payload.get("calendar_id", "primary")
+    
+    try:
+        creds = get_google_calendar_service()
+        if not creds:
+             return jsonify({
+                "error": "not_authenticated",
+                "message": "Please authenticate with Google first"
+            }), 401
+        
+        service = build('calendar', 'v3', credentials=creds)
+        
+        # Get events for the next year
+        now = datetime.utcnow().isoformat() + 'Z'  # 'Z' indicates UTC time
+        events_result = service.events().list(
+            calendarId=calendar_id, 
+            timeMin=now,
+            maxResults=250, 
+            singleEvents=True,
+            orderBy='startTime'
+        ).execute()
+        events = events_result.get('items', [])
+        
+        return jsonify({"events": events, "calendar_id": calendar_id})
+    except Exception as e:
+        print(f"Error fetching events: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/upload_to_google_calendar", methods=["POST"])
+def upload_to_google_calendar():
+    """Upload assignments to Google Calendar."""
+    payload = request.get_json()
+    if not isinstance(payload, dict):
+        return jsonify({"error": "expected JSON object"}), 400
+    
+    assignments = payload.get("assignments", [])
+    course_name = payload.get("course_name", "Assignments")
+    
+    if not assignments:
+        return jsonify({"error": "no assignments provided"}), 400
+    
+    try:
+        # Check for existing credentials
+        creds = get_google_calendar_service()
+        
+        if not creds:
+            # Need to initiate auth flow
+            return jsonify({
+                "error": "not_authenticated",
+                "message": "Please authenticate with Google first"
+            }), 401
+        
+        # Upload assignments to Google Calendar
+        result = upload_assignments_to_google_calendar(assignments, course_name, creds)
+        
+        if result.get('success'):
+            return jsonify(result), 200
+        else:
+            return jsonify(result), 500
+    
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/check_google_auth", methods=["GET"])
+def check_google_auth():
+    """Check if user is authenticated with Google."""
+    try:
+        creds = get_google_calendar_service()
+        is_authenticated = creds is not None and not creds.expired
+        
+        return jsonify({
+            "authenticated": is_authenticated,
+            "client_id": GOOGLE_CLIENT_ID is not None
+        })
+    except Exception as e:
+        return jsonify({"authenticated": False, "error": str(e)})
 
 
 if __name__ == "__main__":

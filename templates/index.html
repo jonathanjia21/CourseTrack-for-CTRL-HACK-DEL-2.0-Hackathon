@@ -107,11 +107,21 @@
                 <p class="success-subtitle">Your calendar file is ready to download</p>
             </div>
             <div class="success-body">
-                <p>Would you like to generate a personalized study plan for your course?</p>
+                <div class="success-options">
+                    <div class="success-option">
+                        <h3>📅 Upload to Google Calendar</h3>
+                        <p>Add your assignments directly to your Google Calendar</p>
+                        <button type="button" class="btn-primary" id="uploadGoogleCalendar">Upload to Google Calendar</button>
+                    </div>
+                    <div class="success-option">
+                        <h3>📖 Generate Study Plan</h3>
+                        <p>Get a personalized study guide for your course</p>
+                        <button type="button" class="btn-primary" id="generateStudyPlan">Generate Study Plan</button>
+                    </div>
+                </div>
             </div>
             <div class="success-footer">
-                <button type="button" class="btn-secondary" id="skipStudyPlan">Skip</button>
-                <button type="button" class="btn-primary" id="generateStudyPlan">Generate Study Plan</button>
+                <button type="button" class="btn-secondary" id="skipStudyPlan">Skip for Now</button>
             </div>
         </div>
     </div>
@@ -132,6 +142,20 @@
             </div>
         </div>
         <div class="study-guide-inline-body" id="inlineGuideBody"></div>
+    </div>
+
+    <!-- Inline Calendar Preview -->
+    <div class="calendar-view-inline" id="calendarViewInline" style="display: none;">
+        <div class="calendar-view-header">
+            <h2>Calendar Preview</h2>
+            <div class="calendar-controls">
+                <span id="calendarNameDisplay"></span>
+                <a href="https://calendar.google.com" target="_blank" class="btn-check-google">
+                    Open Google Calendar ↗
+                </a>
+            </div>
+        </div>
+        <div class="calendar-view-body" id="calendarViewBody"></div>
     </div>
 
     <script src="static/js/index.js"></script>

@@ -12,6 +12,7 @@ const confirmGenerate = document.getElementById('confirmGenerate');
 const successModal = document.getElementById('successModal');
 const skipStudyPlan = document.getElementById('skipStudyPlan');
 const generateStudyPlan = document.getElementById('generateStudyPlan');
+const uploadGoogleCalendar = document.getElementById('uploadGoogleCalendar');
 const studyPlanSelector = document.getElementById('studyPlanSelector');
 const studyPlanDropdown = document.getElementById('studyPlanDropdown');
 const inlineDownloadPdf = document.getElementById('inlineDownloadPdf');
@@ -26,6 +27,9 @@ const termEnd = document.getElementById('termEnd');
 const discordMatches = document.getElementById('discordMatches');
 const discordMatchesBody = document.getElementById('discordMatchesBody');
 const discordMatchesEmpty = document.getElementById('discordMatchesEmpty');
+const calendarViewInline = document.getElementById('calendarViewInline');
+const calendarViewBody = document.getElementById('calendarViewBody');
+const calendarNameDisplay = document.getElementById('calendarNameDisplay');
 
 let selectedFiles = [];
 let extractedAssignments = [];
@@ -36,6 +40,7 @@ let fileHashesByCourseName = {}; // Map of courseName -> file_hash (for caching)
 let currentStudyPlanCourse = ''; // Track currently viewed study plan course
 const ALL_COURSES_VALUE = '__all__';
 let discordMatchesBySource = {}; // Map of filename -> array of handles
+let currentCourseNameForCalendar = ''; // Store course name for Google Calendar upload
 
 // Click to browse
 dropzone.addEventListener('click', () => fileInput.click());
@@ -380,6 +385,101 @@ skipStudyPlan.addEventListener('click', () => {
     resetForm();
 });
 
+// Upload to Google Calendar
+uploadGoogleCalendar.addEventListener('click', async () => {
+    hideSuccessModal();
+    setLoading(true, 'Connecting to Google Calendar...');
+
+    try {
+        // First check if user is authenticated
+        const authCheck = await fetch('/check_google_auth');
+        if (!authCheck.ok) {
+            showError('Error checking Google authentication');
+            setLoading(false);
+            return;
+        }
+
+        const authStatus = await authCheck.json();
+        
+        // If not authenticated, redirect to auth flow
+        if (!authStatus.authenticated) {
+            setLoading(true, 'Redirecting to Google authentication...');
+            
+            const authResponse = await fetch('/google_auth_start', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+
+            if (!authResponse.ok) {
+                showError('Google Calendar not configured. Please check setup guide.');
+                setLoading(false);
+                return;
+            }
+
+            const authData = await authResponse.json();
+            if (authData.auth_url) {
+                // Redirect to Google auth
+                window.location.href = authData.auth_url;
+                return;
+            }
+        }
+
+        // User is authenticated, proceed with upload
+        setLoading(true, 'Uploading assignments to Google Calendar...');
+
+        const uploadResponse = await fetch('/upload_to_google_calendar', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                assignments: currentCheckedAssignments,
+                course_name: currentCourseNameForCalendar || 'Assignments'
+            })
+        });
+
+        if (uploadResponse.status === 401) {
+            // Need authentication
+            const errorData = await uploadResponse.json();
+            if (errorData.error === 'not_authenticated') {
+                setLoading(true, 'Redirecting to Google authentication...');
+                
+                const authResponse = await fetch('/google_auth_start', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+
+                if (authResponse.ok) {
+                    const authData = await authResponse.json();
+                    if (authData.auth_url) {
+                        window.location.href = authData.auth_url;
+                    }
+                }
+                return;
+            }
+        }
+
+        if (!uploadResponse.ok) {
+            const errorData = await uploadResponse.json();
+            showError(errorData.error || 'Failed to upload to Google Calendar');
+            setLoading(false);
+            return;
+        }
+
+        const result = await uploadResponse.json();
+        setLoading(false);
+        
+        showSuccess(`Successfully uploaded ${result.events_created} assignments to "${result.calendar_name}" calendar!`);
+        
+        if (result.calendar_id) {
+             fetchAndDisplayCalendar(result.calendar_id, result.calendar_name);
+        }
+
+    } catch (err) {
+        console.error(err);
+        showError(err.message || 'Error uploading to Google Calendar');
+        setLoading(false);
+    }
+});
+
 // Download study guide as PDF
 async function downloadStudyGuide() {
     const cName = currentStudyPlanCourse;
@@ -674,6 +774,8 @@ function resetForm() {
     studyPlanSelector.style.display = 'none';
     studyGuideInline.style.display = 'none';
     inlineGuideBody.innerHTML = '';
+    calendarViewInline.style.display = 'none';
+    calendarViewBody.innerHTML = '';
     populateStudyPlanDropdown([]);
 }
 
@@ -732,6 +834,7 @@ confirmGenerate.addEventListener('click', async () => {
 
         // Store checked assignments for study plan generation
         currentCheckedAssignments = checkedAssignments;
+        currentCourseNameForCalendar = course;
 
         // Show success modal with study plan option
         hidePreview();
@@ -796,4 +899,31 @@ function getCourseColorClass(courseCode) {
         hash = (hash * 31 + courseCode.charCodeAt(i)) % 997;
     }
     return palettes[hash % palettes.length];
+}
+function fetchAndDisplayCalendar(calendarId, calendarName) {
+    calendarNameDisplay.textContent = calendarName;
+    calendarViewInline.style.display = 'block';
+    
+    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+    const encodedId = encodeURIComponent(calendarId);
+    const encodedTimeZone = encodeURIComponent(timeZone);
+    
+    const embedUrl = `https://calendar.google.com/calendar/embed?height=800&wkst=1&bgcolor=%23ffffff&ctz=${encodedTimeZone}&src=${encodedId}&color=%23039BE5&mode=MONTH&showTitle=0&showPrint=0&showTabs=1&showCalendars=0`;
+    
+    calendarViewBody.innerHTML = `
+        <div class="calendar-iframe-wrapper" style="width: 100%; height: 800px; border-radius: 12px; overflow: hidden; background: white;">
+            <iframe 
+                src="${embedUrl}" 
+                style="border-width:0" 
+                width="100%" 
+                height="100%" 
+                frameborder="0" 
+                scrolling="no">
+            </iframe>
+        </div>
+    `;
+
+    setTimeout(() => {
+        calendarViewInline.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 100);
 }
