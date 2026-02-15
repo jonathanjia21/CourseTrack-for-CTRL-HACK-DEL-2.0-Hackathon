@@ -11,6 +11,7 @@ const cancelPreview = document.getElementById('cancelPreview');
 const confirmGenerate = document.getElementById('confirmGenerate');
 const successModal = document.getElementById('successModal');
 const skipStudyPlan = document.getElementById('skipStudyPlan');
+const downloadIcsBtn = document.getElementById('downloadIcsBtn');
 const generateStudyPlan = document.getElementById('generateStudyPlan');
 const uploadGoogleCalendar = document.getElementById('uploadGoogleCalendar');
 const studyPlanSelector = document.getElementById('studyPlanSelector');
@@ -519,14 +520,10 @@ cancelPreview.addEventListener('click', () => {
     submitBtn.disabled = false;
 });
 
-// Skip study plan
+// Close success modal without resetting form (to view results)
 skipStudyPlan.addEventListener('click', () => {
     hideSuccessModal();
-    // Preserve discord matches across skip
-    const savedMatches = { ...discordMatchesBySource };
-    resetForm();
-    discordMatchesBySource = savedMatches;
-    renderDiscordMatches();
+    // Do not reset form so user can see inline results (calendar/study plan)
 });
 
 // Upload to Google Calendar
@@ -871,7 +868,7 @@ generateStudyPlan.addEventListener('click', async () => {
             studyPlanDropdown.value = courseNames[0];
             showInlineStudyGuide(courseNames[0]);
         }
-
+        
     } catch (err) {
         console.error(err);
         showError(err.message || 'Failed to generate study plans');
@@ -925,10 +922,10 @@ function resetForm() {
     populateStudyPlanDropdown([]);
 }
 
-// Generate calendar from selected assignments
+// Generate calendar from selected assignments (does not download yet)
 confirmGenerate.addEventListener('click', async () => {
     hidePreview();
-    setLoading(true, 'Generating calendar file...');
+    // setLoading(true, 'Generating calendar data...');
 
     try {
         // Filter to only checked assignments
@@ -950,7 +947,43 @@ confirmGenerate.addEventListener('click', async () => {
             };
         });
 
-        const course = courseName.value.trim() || 'Course Assignments';
+        // Store checked assignments (unprefixed) for other actions
+        currentCheckedAssignments = checkedAssignments;
+        currentCourseNameForCalendar = courseName.value.trim() || 'Course Assignments';
+
+        // Show success modal with options
+        hidePreview();
+        setLoading(false);
+        showSuccessModal();
+
+    } catch (err) {
+        console.error(err);
+        showError(err.message || 'An error occurred');
+    } finally {
+        setLoading(false);
+        submitBtn.disabled = false;
+    }
+});
+
+downloadIcsBtn.addEventListener('click', async () => {
+    if (currentCheckedAssignments.length === 0) {
+        showError('No assignments selected');
+        return;
+    }
+    
+    setLoading(true, 'Downloading calendar file...');
+    try {
+        // Prefix titles with course code for the ICS file
+        const prefixedAssignments = currentCheckedAssignments.map(assignment => {
+            const courseCode = extractCourseCode(assignment.source);
+            const prefix = courseCode ? `${courseCode} - ` : '';
+            return {
+                ...assignment,
+                title: `${prefix}${assignment.title}`
+            };
+        });
+
+        const course = currentCourseNameForCalendar || 'Course Assignments';
         const response = await fetch(`/json_to_ics?course_name=${encodeURIComponent(course)}`, {
             method: 'POST',
             headers: {
@@ -974,24 +1007,14 @@ confirmGenerate.addEventListener('click', async () => {
         a.click();
         window.URL.revokeObjectURL(url);
         document.body.removeChild(a);
-
-        // Store checked assignments for study plan generation
-        currentCheckedAssignments = checkedAssignments;
-        currentCourseNameForCalendar = course;
-
-        // Show success modal with study plan option
-        hidePreview();
-        setLoading(false);
-        showSuccessModal();
-
+        
     } catch (err) {
         console.error(err);
         showError(err.message || 'An error occurred');
     } finally {
         setLoading(false);
-        submitBtn.disabled = false;
     }
-});
+ });
 
 function extractCourseCode(filename) {
     if (!filename) return null;
