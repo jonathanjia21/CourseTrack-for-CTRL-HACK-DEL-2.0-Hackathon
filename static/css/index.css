@@ -147,52 +147,67 @@ h1 {
     transition: opacity 0.2s ease;
 }
 
-.discord-opt-fields input[type="text"],
-.discord-opt-fields input[type="date"] {
-    width: 100%;
-    padding: 12px 14px;
-    border: 1px solid rgba(10, 10, 15, 0.12);
-    border-radius: 10px;
-    font-size: 13px;
-    background: #f8f5ff;
-}
-
-.discord-handle-group {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-}
-
 .btn-discord {
-    align-self: flex-start;
-    padding: 10px 16px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 20px;
     border-radius: 10px;
-    border: 1px solid rgba(61, 43, 122, 0.2);
-    background: rgba(61, 43, 122, 0.08);
-    color: #2a1b5a;
-    font-size: 12px;
+    border: 1px solid rgba(88, 101, 242, 0.3);
+    background: rgba(88, 101, 242, 0.1);
+    color: #5865F2;
+    font-size: 13px;
     font-weight: 700;
     cursor: pointer;
     width: auto;
     margin: 0;
+    transition: background 0.2s, border-color 0.2s;
 }
 
 .btn-discord:hover {
-    background: rgba(61, 43, 122, 0.18);
+    background: rgba(88, 101, 242, 0.2);
+    border-color: rgba(88, 101, 242, 0.5);
 }
 
-.discord-avatar {
-    display: inline-flex;
+.btn-discord-icon {
+    font-size: 16px;
+}
+
+.discord-connected {
+    display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 12px;
+    padding: 10px 16px;
+    border-radius: 12px;
+    background: rgba(87, 242, 135, 0.08);
+    border: 1px solid rgba(87, 242, 135, 0.3);
 }
 
-.discord-avatar img {
-    width: 48px;
-    height: 48px;
+.discord-connected-avatar {
+    width: 40px;
+    height: 40px;
     border-radius: 50%;
-    border: 2px solid rgba(61, 43, 122, 0.2);
+    border: 2px solid rgba(87, 242, 135, 0.4);
     object-fit: cover;
+}
+
+.discord-connected-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.discord-connected-name {
+    font-size: 14px;
+    font-weight: 700;
+    color: #1a102e;
+}
+
+.discord-connected-badge {
+    font-size: 11px;
+    font-weight: 600;
+    color: #3ba55c;
+    letter-spacing: 0.03em;
 }
 
 .discord-opt-fields.active {

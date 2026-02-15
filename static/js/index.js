@@ -21,9 +21,9 @@ const error = document.getElementById('error');
 const success = document.getElementById('success');
 const courseName = document.getElementById('courseName');
 const discordOptIn = document.getElementById('discordOptIn');
-const discordHandle = document.getElementById('discordHandle');
 const discordConnect = document.getElementById('discordConnect');
-const discordAvatar = document.getElementById('discordAvatar');
+const discordConnected = document.getElementById('discordConnected');
+const discordConnectedName = document.getElementById('discordConnectedName');
 const discordAvatarImg = document.getElementById('discordAvatarImg');
 const discordMatches = document.getElementById('discordMatches');
 const discordMatchesBody = document.getElementById('discordMatchesBody');
@@ -39,6 +39,7 @@ let currentStudyPlanCourse = ''; // Track currently viewed study plan course
 const ALL_COURSES_VALUE = '__all__';
 let discordMatchesBySource = {}; // Map of filename -> array of handles
 let discordAvatarUrl = '';
+let discordHandleValue = ''; // Set by Discord OAuth only
 
 // Click to browse
 dropzone.addEventListener('click', () => fileInput.click());
@@ -87,15 +88,22 @@ function normalizeDiscordHandle(handle) {
     return handle.trim().replace(/^@/, '').trim();
 }
 
-function updateDiscordAvatarPreview(url) {
-    if (!discordAvatar || !discordAvatarImg) return;
-    if (!url) {
-        discordAvatar.style.display = 'none';
-        discordAvatarImg.removeAttribute('src');
+function showDiscordConnected(handle, avatarUrl) {
+    if (!discordConnected || !discordConnectedName || !discordAvatarImg) return;
+    if (!handle) {
+        discordConnected.style.display = 'none';
+        discordConnect.style.display = '';
         return;
     }
-    discordAvatarImg.src = url;
-    discordAvatar.style.display = 'inline-flex';
+    discordConnectedName.textContent = handle;
+    if (avatarUrl) {
+        discordAvatarImg.src = avatarUrl;
+        discordAvatarImg.style.display = '';
+    } else {
+        discordAvatarImg.style.display = 'none';
+    }
+    discordConnected.style.display = 'flex';
+    discordConnect.style.display = 'none';
 }
 
 function setOptInFieldsEnabled(isEnabled) {
@@ -149,7 +157,7 @@ discordOptIn.addEventListener('change', (e) => {
 });
 
 setOptInFieldsEnabled(discordOptIn.checked);
-updateDiscordAvatarPreview(discordAvatarUrl);
+showDiscordConnected(discordHandleValue, discordAvatarUrl);
 
 if (discordConnect) {
     discordConnect.addEventListener('click', () => {
@@ -163,12 +171,12 @@ window.addEventListener('message', (event) => {
     const handle = event.data.handle || '';
     const avatarUrl = event.data.avatar_url || '';
     if (handle) {
-        discordHandle.value = handle;
+        discordHandleValue = handle;
+        discordAvatarUrl = avatarUrl;
         discordOptIn.checked = true;
         setOptInFieldsEnabled(true);
+        showDiscordConnected(handle, avatarUrl);
     }
-    discordAvatarUrl = avatarUrl;
-    updateDiscordAvatarPreview(avatarUrl);
 });
 
 function updateFileList() {
@@ -237,9 +245,8 @@ uploadForm.addEventListener('submit', async (e) => {
     if (selectedFiles.length === 0) return;
 
     if (discordOptIn.checked) {
-        const handle = normalizeDiscordHandle(discordHandle.value);
-        if (!handle) {
-            showError('Please enter your Discord handle to opt in');
+        if (!discordHandleValue) {
+            showError('Please connect your Discord account first');
             return;
         }
     }
@@ -291,8 +298,8 @@ uploadForm.addEventListener('submit', async (e) => {
                 Object.assign(studyPlansByCourseName, cachedStudyPlans);
             }
 
-            if (discordOptIn.checked && fileHash) {
-                const handle = normalizeDiscordHandle(discordHandle.value);
+            if (discordOptIn.checked && fileHash && discordHandleValue) {
+                const handle = normalizeDiscordHandle(discordHandleValue);
                 try {
                     const shareResponse = await fetch('/share_discord', {
                         method: 'POST',
@@ -706,9 +713,9 @@ function resetForm() {
     submitBtn.disabled = true;
     fileInput.value = '';
     discordOptIn.checked = false;
-    discordHandle.value = '';
+    discordHandleValue = '';
     discordAvatarUrl = '';
-    updateDiscordAvatarPreview('');
+    showDiscordConnected('', '');
     setOptInFieldsEnabled(false);
     discordMatches.style.display = 'none';
     discordMatchesBody.innerHTML = '';
