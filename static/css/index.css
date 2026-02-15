@@ -702,9 +702,19 @@ button:disabled {
     transition: all 0.2s;
 }
 
+.assignment-item.low-accuracy {
+    background: linear-gradient(135deg, #fff1f1 0%, #ffe3e3 100%);
+    border-color: rgba(205, 47, 47, 0.45);
+}
+
 .assignment-item:hover {
     box-shadow: 0 4px 12px rgba(255, 90, 224, 0.15);
     border-color: rgba(255, 90, 224, 0.3);
+}
+
+.assignment-item.low-accuracy:hover {
+    box-shadow: 0 4px 12px rgba(205, 47, 47, 0.24);
+    border-color: rgba(205, 47, 47, 0.65);
 }
 
 .assignment-item.unchecked {
@@ -725,11 +735,41 @@ button:disabled {
     flex: 1;
 }
 
-.assignment-title {
+.assignment-edit-grid {
+    display: grid;
+    gap: 10px;
+    grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.assignment-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.assignment-field-label {
+    font-size: 11px;
     font-weight: 600;
-    font-size: 15px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #5f5c74;
+}
+
+.assignment-input {
+    width: 100%;
+    border: 1px solid rgba(10, 10, 15, 0.15);
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 14px;
+    font-family: inherit;
     color: #1a102e;
-    margin-bottom: 4px;
+    background: rgba(255, 255, 255, 0.75);
+}
+
+.assignment-input:focus {
+    outline: none;
+    border-color: rgba(255, 90, 224, 0.55);
+    box-shadow: 0 0 0 3px rgba(255, 90, 224, 0.16);
 }
 
 .assignment-meta {
@@ -752,6 +792,24 @@ button:disabled {
     border-radius: 6px;
     background: rgba(255, 191, 31, 0.2);
     color: #8d6b00;
+}
+
+.assignment-accuracy {
+    padding: 3px 8px;
+    border-radius: 6px;
+    background: rgba(4, 140, 79, 0.12);
+    color: #0b6b3f;
+    font-weight: 600;
+}
+
+.assignment-accuracy.is-low {
+    background: rgba(205, 47, 47, 0.14);
+    color: #a52323;
+}
+
+.assignment-warning {
+    color: #a52323;
+    font-weight: 600;
 }
 
 .preview-footer {
@@ -818,6 +876,10 @@ button:disabled {
     .preview-footer {
         padding-left: 20px;
         padding-right: 20px;
+    }
+
+    .assignment-edit-grid {
+        grid-template-columns: 1fr;
     }
 }
 

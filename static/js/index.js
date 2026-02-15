@@ -46,6 +46,7 @@ const ALL_COURSES_VALUE = '__all__';
 let discordMatchesBySource = {}; // Map of filename -> array of handles
 let discordAvatarUrl = '';
 let discordHandleValue = ''; // Set by Discord OAuth only
+const LOW_ACCURACY_THRESHOLD = 80;
 
 // Click to browse
 dropzone.addEventListener('click', () => fileInput.click());
@@ -423,18 +424,48 @@ function renderPreview() {
                     <span class="file-group-count">${assignments.length} assignment${assignments.length !== 1 ? 's' : ''}</span>
                 </div>
                 <div class="file-group-items">
-                    ${assignments.map(assignment => `
-                        <div class="assignment-item" data-index="${assignment.originalIndex}">
+                    ${assignments.map(assignment => {
+                        const accuracy = Number(assignment.accuracy ?? 100);
+                        const isLowAccuracy = assignment.is_low_accuracy === true || accuracy < LOW_ACCURACY_THRESHOLD;
+                        const title = assignment.title || '';
+                        const dueDate = assignment.due_date || '';
+                        const assignmentType = assignment.type || 'assignment';
+                        return `
+                        <div class="assignment-item${isLowAccuracy ? ' low-accuracy' : ''}" data-index="${assignment.originalIndex}">
                             <input type="checkbox" class="assignment-checkbox" id="assignment-${assignment.originalIndex}" checked>
                             <div class="assignment-info">
-                                <label for="assignment-${assignment.originalIndex}" class="assignment-title">${escapeHtml(assignment.title || 'Untitled')}</label>
+                                <div class="assignment-edit-grid">
+                                    <div class="assignment-field">
+                                        <label for="assignment-title-${assignment.originalIndex}" class="assignment-field-label">Title</label>
+                                        <input id="assignment-title-${assignment.originalIndex}" class="assignment-input assignment-title-input" type="text" value="${escapeHtml(title)}" placeholder="Untitled assignment">
+                                    </div>
+                                    <div class="assignment-field">
+                                        <label for="assignment-date-${assignment.originalIndex}" class="assignment-field-label">Due Date</label>
+                                        <input id="assignment-date-${assignment.originalIndex}" class="assignment-input assignment-date-input" type="date" value="${escapeHtml(dueDate)}">
+                                    </div>
+                                    <div class="assignment-field">
+                                        <label for="assignment-type-${assignment.originalIndex}" class="assignment-field-label">Type</label>
+                                        <select id="assignment-type-${assignment.originalIndex}" class="assignment-input assignment-type-input">
+                                            <option value="assignment" ${assignmentType === 'assignment' ? 'selected' : ''}>assignment</option>
+                                            <option value="test" ${assignmentType === 'test' ? 'selected' : ''}>test</option>
+                                            <option value="quiz" ${assignmentType === 'quiz' ? 'selected' : ''}>quiz</option>
+                                            <option value="exam" ${assignmentType === 'exam' ? 'selected' : ''}>exam</option>
+                                            <option value="project" ${assignmentType === 'project' ? 'selected' : ''}>project</option>
+                                            <option value="presentation" ${assignmentType === 'presentation' ? 'selected' : ''}>presentation</option>
+                                            <option value="other" ${assignmentType === 'other' ? 'selected' : ''}>other</option>
+                                        </select>
+                                    </div>
+                                </div>
                                 <div class="assignment-meta">
-                                    <span class="assignment-date">📅 ${assignment.due_date || 'No date'}</span>
-                                    <span class="assignment-type">${assignment.type || 'assignment'}</span>
+                                    <span class="assignment-accuracy ${isLowAccuracy ? 'is-low' : ''}">
+                                        Accuracy: ${Number.isFinite(accuracy) ? accuracy.toFixed(1) : '100.0'}%
+                                    </span>
+                                    ${isLowAccuracy ? '<span class="assignment-warning">Low confidence entry</span>' : ''}
                                 </div>
                             </div>
                         </div>
-                    `).join('')}
+                    `;
+                    }).join('')}
                 </div>
             </div>
         `;
@@ -449,6 +480,32 @@ function renderPreview() {
             item.classList.toggle('unchecked', !e.target.checked);
         });
     });
+}
+
+function getAssignmentsFromPreview({ onlyChecked = false } = {}) {
+    return extractedAssignments
+        .map((assignment, index) => {
+            const checkbox = document.getElementById(`assignment-${index}`);
+            if (onlyChecked && (!checkbox || !checkbox.checked)) {
+                return null;
+            }
+
+            const titleInput = document.getElementById(`assignment-title-${index}`);
+            const dateInput = document.getElementById(`assignment-date-${index}`);
+            const typeInput = document.getElementById(`assignment-type-${index}`);
+            const accuracy = Number(assignment.accuracy ?? 100);
+            const isLowAccuracy = assignment.is_low_accuracy === true || accuracy < LOW_ACCURACY_THRESHOLD;
+
+            return {
+                ...assignment,
+                title: (titleInput && titleInput.value ? titleInput.value : assignment.title || 'Untitled').trim(),
+                due_date: dateInput && dateInput.value ? dateInput.value : null,
+                type: typeInput && typeInput.value ? typeInput.value : (assignment.type || 'assignment'),
+                accuracy: Number.isFinite(accuracy) ? accuracy : 100,
+                is_low_accuracy: isLowAccuracy
+            };
+        })
+        .filter(Boolean);
 }
 
 // Cancel preview
@@ -682,7 +739,8 @@ generateStudyPlan.addEventListener('click', async () => {
             
             const requestPayload = {
                 data: assignments,
-                file_hash: fileHash
+                file_hash: fileHash,
+                allow_cache: false
             };
             
             const response = await fetch(`/generate_study_plan?course_name=${encodeURIComponent(courseName)}`, {
@@ -772,10 +830,7 @@ confirmGenerate.addEventListener('click', async () => {
 
     try {
         // Filter to only checked assignments
-        const checkedAssignments = extractedAssignments.filter((_, index) => {
-            const checkbox = document.getElementById(`assignment-${index}`);
-            return checkbox && checkbox.checked;
-        });
+        const checkedAssignments = getAssignmentsFromPreview({ onlyChecked: true });
 
         if (checkedAssignments.length === 0) {
             showError('Please select at least one assignment');

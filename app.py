@@ -37,6 +37,7 @@ DISCORD_CLIENT_SECRET = os.getenv("DISCORD_CLIENT_SECRET")
 DISCORD_REDIRECT_URI = os.getenv("DISCORD_REDIRECT_URI")
 
 USE_LOCAL_FALLBACK = os.getenv("USE_LOCAL_FALLBACK", "true").lower() == "true"
+LOW_ACCURACY_THRESHOLD = 80.0
 
 
 # ----------------------------
@@ -84,7 +85,9 @@ def parse_events_local(text: str) -> list:
                     events.append({
                         "title": title,
                         "due_date": parsed,
-                        "type": "assignment"
+                        "type": "assignment",
+                        "accuracy": 100.0,
+                        "is_low_accuracy": False,
                     })
 
     return events
@@ -102,6 +105,55 @@ def parse_flexible_date(date_str: str, default_year: int = None) -> str:
         return dt.date().isoformat()
     except Exception:
         return None
+
+
+def _parse_accuracy_value(raw_accuracy) -> float:
+    if raw_accuracy is None:
+        return 100.0
+    if isinstance(raw_accuracy, (int, float)):
+        value = float(raw_accuracy)
+    elif isinstance(raw_accuracy, str):
+        cleaned = raw_accuracy.strip().replace("%", "")
+        if not cleaned:
+            return 100.0
+        try:
+            value = float(cleaned)
+        except Exception:
+            return 100.0
+    else:
+        return 100.0
+
+    if value < 0:
+        return 0.0
+    if value > 100:
+        return 100.0
+    return round(value, 2)
+
+
+def normalize_extracted_assignments(items: list) -> list:
+    normalized = []
+    if not isinstance(items, list):
+        return normalized
+
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+
+        title = (item.get("title") or "Untitled").strip()
+        due_date = item.get("due_date")
+        event_type = (item.get("type") or "assignment").strip().lower()
+        accuracy = _parse_accuracy_value(item.get("accuracy"))
+        is_low_accuracy = accuracy < LOW_ACCURACY_THRESHOLD
+
+        normalized.append({
+            "title": title,
+            "due_date": due_date,
+            "type": event_type,
+            "accuracy": accuracy,
+            "is_low_accuracy": is_low_accuracy,
+        })
+
+    return normalized
 
 
 # ----------------------------
@@ -143,7 +195,8 @@ Required format:
   {
     "title": string,
     "due_date": string (YYYY-MM-DD) or null,
-    "type": string
+    "type": string,
+    "accuracy": number
   }
 ]
 
@@ -153,7 +206,8 @@ assignment, test, quiz, exam, project, presentation, other
 Rules:
 - Dates must be normalized to YYYY-MM-DD.
 - If date cannot be determined, use null.
-- Do not include extra fields.
+- "accuracy" is confidence from 0 to 100 for that specific entry.
+- Do not include extra fields beyond title, due_date, type, accuracy.
 - Do not reorder keys.
 - Return [] if nothing found.
 """
@@ -197,7 +251,8 @@ Text:
 
     # Parse JSON from response
     try:
-        return json.loads(content)
+        raw_items = json.loads(content)
+        return normalize_extracted_assignments(raw_items)
     except Exception:
         # Try to extract JSON array from markdown or other wrapper
         start = content.find("[")
@@ -205,7 +260,8 @@ Text:
         if start != -1 and end != -1 and end > start:
             snippet = content[start:end + 1]
             try:
-                return json.loads(snippet)
+                raw_items = json.loads(snippet)
+                return normalize_extracted_assignments(raw_items)
             except Exception as e:
                 raise RuntimeError(f"Failed to parse JSON from model output: {e}\nOutput was:\n{content}")
         raise RuntimeError(f"Model did not return valid JSON.\nOutput:\n{content}")
@@ -320,14 +376,20 @@ def extract_assignments():
         try:
             cached = course_collection.find_one({"_id": file_hash})
             if cached and "assignments" in cached:
+                cached_assignments = normalize_extracted_assignments(cached["assignments"])
+                update_fields = {}
                 if "created_at" not in cached:
+                    update_fields["created_at"] = datetime.utcnow()
+                if cached_assignments != cached["assignments"]:
+                    update_fields["assignments"] = cached_assignments
+                if update_fields:
                     course_collection.update_one(
                         {"_id": file_hash},
-                        {"$set": {"created_at": datetime.utcnow()}}
+                        {"$set": update_fields}
                     )
                 print(f"Cache hit for {filename} (hash: {file_hash[:8]}...)")
                 return jsonify({
-                    "assignments": cached["assignments"],
+                    "assignments": cached_assignments,
                     "file_hash": file_hash,
                     "study_plans": cached.get("study_plans", {})
                 })
@@ -341,9 +403,9 @@ def extract_assignments():
 
     # Extract assignments (using fallback or API)
     if USE_LOCAL_FALLBACK:
-        items = parse_events_local(text)
+        items = normalize_extracted_assignments(parse_events_local(text))
     else:
-        items = call_openrouter_to_extract_assignments(text)
+        items = normalize_extracted_assignments(call_openrouter_to_extract_assignments(text))
     
     # Cache the result (if MongoDB is available)
     if course_collection is not None:
@@ -406,13 +468,18 @@ def pdf_to_ics_endpoint():
         try:
             cached = course_collection.find_one({"_id": file_hash})
             if cached and "assignments" in cached:
+                items = normalize_extracted_assignments(cached["assignments"])
+                update_fields = {}
                 if "created_at" not in cached:
+                    update_fields["created_at"] = datetime.utcnow()
+                if items != cached["assignments"]:
+                    update_fields["assignments"] = items
+                if update_fields:
                     course_collection.update_one(
                         {"_id": file_hash},
-                        {"$set": {"created_at": datetime.utcnow()}}
+                        {"$set": update_fields}
                     )
                 print(f"Cache hit for {filename} (hash: {file_hash[:8]}...)")
-                items = cached["assignments"]
                 course_name = request.args.get("course_name", "Course Assignments")
                 ics_content = json_to_ics(items, course_name)
                 return send_file(
@@ -429,9 +496,9 @@ def pdf_to_ics_endpoint():
         return jsonify({"error": "no extractable text"}), 400
 
     if USE_LOCAL_FALLBACK:
-        items = parse_events_local(text)
+        items = normalize_extracted_assignments(parse_events_local(text))
     else:
-        items = call_openrouter_to_extract_assignments(text)
+        items = normalize_extracted_assignments(call_openrouter_to_extract_assignments(text))
 
     # Cache the result
     if course_collection is not None:
@@ -465,12 +532,14 @@ def generate_study_plan_endpoint():
     payload = request.get_json()
     
     # Handle both old format (array) and new format (dict with data and file_hash)
+    allow_cache = True
     if isinstance(payload, list):
         data = payload
         file_hash = None
     elif isinstance(payload, dict) and "data" in payload:
         data = payload["data"]
         file_hash = payload.get("file_hash")
+        allow_cache = payload.get("allow_cache", True)
     else:
         return jsonify({"error": "expected JSON array or object with 'data' key"}), 400
 
@@ -479,12 +548,23 @@ def generate_study_plan_endpoint():
     try:
         # Check cache first if file_hash is provided
         study_plan = None
+        generation_assignments = data
+        cached_doc = None
+
         if file_hash and course_collection is not None:
             try:
-                cached = course_collection.find_one({"_id": file_hash})
-                if cached and "study_plans" in cached and course_name in cached["study_plans"]:
+                cached_doc = course_collection.find_one({"_id": file_hash})
+                if allow_cache and cached_doc and "study_plans" in cached_doc and course_name in cached_doc["study_plans"]:
                     print(f"Cache hit for study plan: {course_name} (hash: {file_hash[:8]}...)")
-                    study_plan = cached["study_plans"][course_name]
+                    study_plan = cached_doc["study_plans"][course_name]
+
+                # If caching is enabled, only allow DB writes from original extracted assignments in Mongo.
+                if allow_cache:
+                    if cached_doc and "assignments" in cached_doc:
+                        generation_assignments = normalize_extracted_assignments(cached_doc["assignments"])
+                    else:
+                        # No original Gemini extraction available for this hash, so disable cache writes.
+                        allow_cache = False
             except Exception as e:
                 print(f"Study plan cache lookup failed: {e}")
         
@@ -510,10 +590,10 @@ def generate_study_plan_endpoint():
                     "resource_recommendations": "Take advantage of tutoring services, online resources, and library materials available at your institution."
                 }
             else:
-                study_plan = call_openrouter_to_generate_study_plan(data, course_name)
+                study_plan = call_openrouter_to_generate_study_plan(generation_assignments, course_name)
             
             # Cache the generated study plan
-            if file_hash and course_collection is not None:
+            if allow_cache and file_hash and course_collection is not None:
                 try:
                     course_collection.update_one(
                         {"_id": file_hash},
