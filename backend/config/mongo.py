@@ -17,6 +17,6 @@ try:
     client.admin.command('ping')
     print("Pinged your deployment. You successfully connected to MongoDB!")
     db = client["courses"]
-    course_collection = ["course_info"]
+    course_collection = db["course_info"]
 except Exception as e:
     print(e)
