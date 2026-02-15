@@ -721,17 +721,19 @@ def discord_oauth_callback():
 <body>
   <script>
     (function () {{
-      const payload = {{
+      var payload = {{
         type: 'discord-auth',
         handle: {json.dumps(handle)},
         avatar_url: {json.dumps(avatar_url)},
       }};
+      try {{
+        localStorage.setItem('discord-auth', JSON.stringify(payload));
+      }} catch (e) {{}}
       if (window.opener) {{
-        window.opener.postMessage(payload, window.location.origin);
-        window.close();
-      }} else {{
-        document.body.textContent = 'Discord connected. You can close this window.';
+        try {{ window.opener.postMessage(payload, window.location.origin); }} catch (e) {{}}
       }}
+      window.close();
+      document.body.textContent = 'Discord connected! You can close this window.';
     }})();
   </script>
 </body>

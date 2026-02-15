@@ -29,6 +29,12 @@ const discordMatches = document.getElementById('discordMatches');
 const discordMatchesBody = document.getElementById('discordMatchesBody');
 const discordMatchesEmpty = document.getElementById('discordMatchesEmpty');
 
+if (window.location.hostname === '127.0.0.1') {
+    const canonicalUrl = new URL(window.location.href);
+    canonicalUrl.hostname = 'localhost';
+    window.location.replace(canonicalUrl.toString());
+}
+
 let selectedFiles = [];
 let extractedAssignments = [];
 let currentCheckedAssignments = [];
@@ -159,17 +165,44 @@ discordOptIn.addEventListener('change', (e) => {
 setOptInFieldsEnabled(discordOptIn.checked);
 showDiscordConnected(discordHandleValue, discordAvatarUrl);
 
+// Clear any stale auth data on load
+try { localStorage.removeItem('discord-auth'); } catch (e) {}
+
+let _discordAuthPollTimer = null;
+
 if (discordConnect) {
     discordConnect.addEventListener('click', () => {
-        window.open('/discord/oauth/start', 'discordAuth', 'width=500,height=700');
+        // Clear old data before opening popup
+        try { localStorage.removeItem('discord-auth'); } catch (e) {}
+        const popup = window.open('/discord/oauth/start', 'discordAuth', 'width=500,height=700');
+
+        // Poll localStorage until auth data arrives or popup closes
+        if (_discordAuthPollTimer) clearInterval(_discordAuthPollTimer);
+        _discordAuthPollTimer = setInterval(() => {
+            try {
+                const raw = localStorage.getItem('discord-auth');
+                if (raw) {
+                    const data = JSON.parse(raw);
+                    applyDiscordAuth(data);
+                    localStorage.removeItem('discord-auth');
+                    clearInterval(_discordAuthPollTimer);
+                    _discordAuthPollTimer = null;
+                    return;
+                }
+            } catch (e) {}
+            // Stop polling if popup was closed without auth
+            if (popup && popup.closed) {
+                clearInterval(_discordAuthPollTimer);
+                _discordAuthPollTimer = null;
+            }
+        }, 500);
     });
 }
 
-window.addEventListener('message', (event) => {
-    if (event.origin !== window.location.origin) return;
-    if (!event.data || event.data.type !== 'discord-auth') return;
-    const handle = event.data.handle || '';
-    const avatarUrl = event.data.avatar_url || '';
+function applyDiscordAuth(data) {
+    if (!data || data.type !== 'discord-auth') return;
+    const handle = data.handle || '';
+    const avatarUrl = data.avatar_url || '';
     if (handle) {
         discordHandleValue = handle;
         discordAvatarUrl = avatarUrl;
@@ -177,6 +210,12 @@ window.addEventListener('message', (event) => {
         setOptInFieldsEnabled(true);
         showDiscordConnected(handle, avatarUrl);
     }
+}
+
+// Listen for postMessage from popup (works when window.opener survives)
+window.addEventListener('message', (event) => {
+    if (event.origin !== window.location.origin) return;
+    applyDiscordAuth(event.data);
 });
 
 function updateFileList() {
