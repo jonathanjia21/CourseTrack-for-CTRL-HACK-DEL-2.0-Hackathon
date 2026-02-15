@@ -13,6 +13,7 @@ from pymongo.errors import DuplicateKeyError
 
 from backend.ics_converter import json_to_ics
 from backend.config.mongo import course_collection
+from backend.study_guide_generator import generate_study_guide_pdf
 
 load_dotenv()
 
@@ -487,6 +488,33 @@ def generate_study_plan_endpoint():
         return jsonify({"error": str(e)}), 500
 
     return jsonify(study_plan)
+
+
+@app.route("/download_study_guide", methods=["POST"])
+def download_study_guide():
+    """Generate and download a study guide as PDF."""
+    payload = request.get_json()
+    if not isinstance(payload, dict):
+        return jsonify({"error": "expected JSON object"}), 400
+
+    study_plan = payload.get("study_plan")
+    assignments = payload.get("assignments", [])
+    course_name = payload.get("course_name", "Course")
+
+    if not study_plan:
+        return jsonify({"error": "missing study_plan data"}), 400
+
+    try:
+        file_bytes = generate_study_guide_pdf(study_plan, course_name, assignments)
+        safe_name = course_name.replace(" ", "_")
+        return send_file(
+            BytesIO(file_bytes),
+            mimetype="application/pdf",
+            as_attachment=True,
+            download_name=f"{safe_name}_Study_Guide.pdf"
+        )
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 if __name__ == "__main__":

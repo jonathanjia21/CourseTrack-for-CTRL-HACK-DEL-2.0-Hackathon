@@ -44,13 +44,6 @@
                     Generate Calendar
                 </button>
 
-                <div class="study-plan-selector" id="studyPlanSelector" style="display: none;">
-                    <label for="studyPlanDropdown">View Study Plan:</label>
-                    <select id="studyPlanDropdown">
-                        <option value="">-- Select a course --</option>
-                    </select>
-                </div>
-
                 <div class="error" id="error"></div>
                 <div class="success" id="success"></div>
             </form>
@@ -109,9 +102,30 @@
             </div>
             <div class="study-plan-body" id="studyPlanBody"></div>
             <div class="study-plan-footer">
+                <button type="button" class="btn-download" id="downloadPdf" title="Download as PDF">
+                    <span class="download-icon">&#128196;</span> Download PDF
+                </button>
                 <button type="button" class="btn-primary" id="closeStudyPlan">Done</button>
             </div>
         </div>
+    </div>
+
+    <!-- Inline scrollable study guide section -->
+    <div class="study-guide-inline" id="studyGuideInline" style="display: none;">
+        <div class="study-guide-inline-header">
+            <h2>Study Guide</h2>
+            <div class="study-guide-inline-controls">
+                <div class="study-guide-course-selector" id="studyPlanSelector" style="display: none;">
+                    <select id="studyPlanDropdown">
+                        <option value="">-- Select a course --</option>
+                    </select>
+                </div>
+                <button type="button" class="btn-download" id="inlineDownloadPdf">
+                    <span class="download-icon">&#128196;</span> PDF
+                </button>
+            </div>
+        </div>
+        <div class="study-guide-inline-body" id="inlineGuideBody"></div>
     </div>
 
     <script src="static/js/index.js"></script>

@@ -18,6 +18,10 @@ const studyPlanCourseName = document.getElementById('studyPlanCourseName');
 const closeStudyPlan = document.getElementById('closeStudyPlan');
 const studyPlanSelector = document.getElementById('studyPlanSelector');
 const studyPlanDropdown = document.getElementById('studyPlanDropdown');
+const downloadPdf = document.getElementById('downloadPdf');
+const inlineDownloadPdf = document.getElementById('inlineDownloadPdf');
+const studyGuideInline = document.getElementById('studyGuideInline');
+const inlineGuideBody = document.getElementById('inlineGuideBody');
 const error = document.getElementById('error');
 const success = document.getElementById('success');
 const courseName = document.getElementById('courseName');
@@ -28,6 +32,7 @@ let currentCheckedAssignments = [];
 let studyPlansByCourseName = {}; // Map of courseName -> studyPlan
 let courseAssignmentsByName = {}; // Map of courseName -> assignments
 let fileHashesByCourseName = {}; // Map of courseName -> file_hash (for caching)
+let currentStudyPlanCourse = ''; // Track currently viewed study plan course
 
 // Click to browse
 dropzone.addEventListener('click', () => fileInput.click());
@@ -284,15 +289,131 @@ skipStudyPlan.addEventListener('click', () => {
 // Close study plan modal (without resetting form)
 closeStudyPlan.addEventListener('click', () => {
     hideStudyPlanModal();
+    // Show the inline study guide when closing the modal
+    if (currentStudyPlanCourse && studyPlansByCourseName[currentStudyPlanCourse]) {
+        showInlineStudyGuide(currentStudyPlanCourse);
+    }
 });
+
+// Download study guide as PDF
+async function downloadStudyGuide() {
+    const cName = currentStudyPlanCourse;
+    if (!cName || !studyPlansByCourseName[cName]) {
+        showError('No study plan available to download');
+        return;
+    }
+
+    try {
+        const response = await fetch('/download_study_guide', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                study_plan: studyPlansByCourseName[cName],
+                assignments: courseAssignmentsByName[cName] || currentCheckedAssignments,
+                course_name: cName
+            })
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(errorText || 'Download failed');
+        }
+
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${cName.replace(/\s+/g, '_')}_Study_Guide.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+    } catch (err) {
+        console.error(err);
+        showError(err.message || 'Failed to download study guide');
+    }
+}
+
+// Download buttons
+downloadPdf.addEventListener('click', () => downloadStudyGuide());
+
+// Download button in inline section
+inlineDownloadPdf.addEventListener('click', () => downloadStudyGuide());
+
+// Show inline study guide section
+function showInlineStudyGuide(cName) {
+    currentStudyPlanCourse = cName;
+    // Update dropdown selection to match
+    if (studyPlanDropdown.value !== cName) {
+        studyPlanDropdown.value = cName;
+    }
+    renderInlineStudyGuide(studyPlansByCourseName[cName], courseAssignmentsByName[cName] || currentCheckedAssignments);
+    studyGuideInline.style.display = 'block';
+    studyPlanSelector.style.display = 'block';
+    // Smooth scroll to the inline guide
+    setTimeout(() => {
+        studyGuideInline.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 100);
+}
+
+function renderInlineStudyGuide(studyPlan, assignments) {
+    let html = '<div class="study-guide-rendered">';
+
+    // Assignments table
+    if (assignments && assignments.length > 0) {
+        html += '<div class="sg-section"><h3>Upcoming Assignments & Deadlines</h3>';
+        html += '<div class="sg-table-wrapper"><table class="sg-table"><thead><tr><th>Title</th><th>Due Date</th><th>Type</th></tr></thead><tbody>';
+        assignments.forEach(a => {
+            html += `<tr>
+                <td>${escapeHtml(a.title || 'Untitled')}</td>
+                <td>${escapeHtml(a.due_date || 'TBD')}</td>
+                <td><span class="sg-type-badge">${escapeHtml((a.type || 'assignment').charAt(0).toUpperCase() + (a.type || 'assignment').slice(1))}</span></td>
+            </tr>`;
+        });
+        html += '</tbody></table></div></div>';
+    }
+
+    // Overview
+    if (studyPlan.overview) {
+        html += `<div class="sg-section"><h3>Overview</h3><p>${escapeHtml(studyPlan.overview)}</p></div>`;
+    }
+
+    // Weekly Schedule
+    if (studyPlan.weekly_schedule && Array.isArray(studyPlan.weekly_schedule)) {
+        html += '<div class="sg-section"><h3>Weekly Schedule</h3>';
+        studyPlan.weekly_schedule.forEach((week, i) => {
+            html += `<div class="sg-week"><h4>Week ${i + 1}</h4><p>${escapeHtml(week)}</p></div>`;
+        });
+        html += '</div>';
+    }
+
+    // Study Tips
+    if (studyPlan.study_tips && Array.isArray(studyPlan.study_tips)) {
+        html += '<div class="sg-section"><h3>Study Tips</h3><ul class="sg-tips">';
+        studyPlan.study_tips.forEach(tip => {
+            html += `<li>${escapeHtml(tip)}</li>`;
+        });
+        html += '</ul></div>';
+    }
+
+    // Resource Recommendations
+    if (studyPlan.resource_recommendations) {
+        html += `<div class="sg-section"><h3>Resource Recommendations</h3><p>${escapeHtml(studyPlan.resource_recommendations)}</p></div>`;
+    }
+
+    html += '</div>';
+    inlineGuideBody.innerHTML = html;
+}
 
 // Study plan dropdown selector
 studyPlanDropdown.addEventListener('change', (e) => {
     const selectedCourseName = e.target.value;
     if (selectedCourseName && studyPlansByCourseName[selectedCourseName]) {
+        currentStudyPlanCourse = selectedCourseName;
         studyPlanCourseName.textContent = `${selectedCourseName} Study Plan`;
         renderStudyPlan(studyPlansByCourseName[selectedCourseName]);
         showStudyPlanModal();
+        showInlineStudyGuide(selectedCourseName);
     }
 });
 
@@ -368,15 +489,14 @@ generateStudyPlan.addEventListener('click', async () => {
         // Populate dropdown with course names
         populateStudyPlanDropdown(courseNames);
         
-        // Show the study plan selector
-        studyPlanSelector.style.display = 'block';
-        
         // Show the first study plan
         if (courseNames.length > 0) {
+            currentStudyPlanCourse = courseNames[0];
             studyPlanDropdown.value = courseNames[0];
             studyPlanCourseName.textContent = `${courseNames[0]} Study Plan`;
             renderStudyPlan(studyPlansByCourseName[courseNames[0]]);
             showStudyPlanModal();
+            showInlineStudyGuide(courseNames[0]);
         }
 
     } catch (err) {
@@ -408,10 +528,13 @@ function resetForm() {
     studyPlansByCourseName = {};
     courseAssignmentsByName = {};
     fileHashesByCourseName = {};
+    currentStudyPlanCourse = '';
     fileList.innerHTML = '';
     submitBtn.disabled = true;
     fileInput.value = '';
     studyPlanSelector.style.display = 'none';
+    studyGuideInline.style.display = 'none';
+    inlineGuideBody.innerHTML = '';
     populateStudyPlanDropdown([]);
 }
 
