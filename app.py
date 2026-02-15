@@ -5,7 +5,9 @@ from io import BytesIO
 from datetime import datetime
 import hashlib
 import requests
-from flask import Flask, request, jsonify, send_file, render_template
+from flask import Flask, request, jsonify, send_file, render_template, redirect
+import secrets
+from urllib.parse import urlencode
 from flask_cors import CORS
 import pdfplumber
 from dotenv import load_dotenv
@@ -20,12 +22,19 @@ load_dotenv()
 app = Flask(__name__)
 CORS(app)
 
+# In-memory store for pending OAuth states (auto-cleaned on use)
+_pending_oauth_states = {}
+
 # ----------------------------
 # OpenRouter Configuration
 # ----------------------------
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "google/gemini-pro")
+
+DISCORD_CLIENT_ID = os.getenv("DISCORD_CLIENT_ID")
+DISCORD_CLIENT_SECRET = os.getenv("DISCORD_CLIENT_SECRET")
+DISCORD_REDIRECT_URI = os.getenv("DISCORD_REDIRECT_URI")
 
 USE_LOCAL_FALLBACK = os.getenv("USE_LOCAL_FALLBACK", "true").lower() == "true"
 
@@ -107,29 +116,10 @@ def normalize_discord_handle(handle: str) -> str:
     return handle.strip()
 
 
-def parse_date_yyyy_mm_dd(date_str: str):
-    if not date_str:
-        return None
-    try:
-        return datetime.strptime(date_str, "%Y-%m-%d").date()
-    except Exception:
-        return None
-
-
-def prune_expired_discords(shared_discords: list) -> tuple[list, bool]:
-    if not shared_discords:
-        return [], False
-    today = datetime.utcnow().date()
-    active = []
-    changed = False
-    for entry in shared_discords:
-        term_end_str = entry.get("term_end")
-        term_end = parse_date_yyyy_mm_dd(term_end_str)
-        if term_end and term_end < today:
-            changed = True
-            continue
-        active.append(entry)
-    return active, changed
+def build_discord_avatar_url(user_id: str, avatar_hash: str) -> str:
+    if not user_id or not avatar_hash:
+        return ""
+    return f"https://cdn.discordapp.com/avatars/{user_id}/{avatar_hash}.png?size=128"
 
 
 # ----------------------------
@@ -330,6 +320,11 @@ def extract_assignments():
         try:
             cached = course_collection.find_one({"_id": file_hash})
             if cached and "assignments" in cached:
+                if "created_at" not in cached:
+                    course_collection.update_one(
+                        {"_id": file_hash},
+                        {"$set": {"created_at": datetime.utcnow()}}
+                    )
                 print(f"Cache hit for {filename} (hash: {file_hash[:8]}...)")
                 return jsonify({
                     "assignments": cached["assignments"],
@@ -357,7 +352,8 @@ def extract_assignments():
                 "_id": file_hash,
                 "filename": filename,
                 "assignments": items,
-                "study_plans": {}
+                "study_plans": {},
+                "created_at": datetime.utcnow()
             })
             print(f"Cached assignments for {filename} (hash: {file_hash[:8]}...)")
         except DuplicateKeyError:
@@ -410,6 +406,11 @@ def pdf_to_ics_endpoint():
         try:
             cached = course_collection.find_one({"_id": file_hash})
             if cached and "assignments" in cached:
+                if "created_at" not in cached:
+                    course_collection.update_one(
+                        {"_id": file_hash},
+                        {"$set": {"created_at": datetime.utcnow()}}
+                    )
                 print(f"Cache hit for {filename} (hash: {file_hash[:8]}...)")
                 items = cached["assignments"]
                 course_name = request.args.get("course_name", "Course Assignments")
@@ -439,6 +440,7 @@ def pdf_to_ics_endpoint():
                 "_id": file_hash,
                 "filename": filename,
                 "assignments": items,
+                "created_at": datetime.utcnow(),
             })
             print(f"Cached assignments for {filename} (hash: {file_hash[:8]}...)")
         except DuplicateKeyError:
@@ -538,37 +540,49 @@ def share_discord():
 
     file_hash = payload.get("file_hash")
     discord_handle = normalize_discord_handle(payload.get("discord_handle", ""))
-    term_end = payload.get("term_end") or None
+    avatar_url = payload.get("avatar_url") or ""
 
     if not file_hash:
         return jsonify({"error": "missing file_hash"}), 400
     if not discord_handle:
         return jsonify({"error": "missing discord_handle"}), 400
-    if term_end and not parse_date_yyyy_mm_dd(term_end):
-        return jsonify({"error": "term_end must be YYYY-MM-DD"}), 400
-
     doc = course_collection.find_one({"_id": file_hash}) or {}
     shared_discords = doc.get("shared_discords", [])
-    shared_discords, changed = prune_expired_discords(shared_discords)
+    changed = False
+
+    if "created_at" not in doc:
+        changed = True
+        doc["created_at"] = datetime.utcnow()
 
     lower_handle = discord_handle.lower()
-    existing = any(entry.get("handle", "").lower() == lower_handle for entry in shared_discords)
-    if not existing:
+    existing_entry = None
+    for entry in shared_discords:
+        if entry.get("handle", "").lower() == lower_handle:
+            existing_entry = entry
+            break
+
+    if existing_entry is None:
         shared_discords.append({
             "handle": discord_handle,
             "created_at": datetime.utcnow().isoformat() + "Z",
-            "term_end": term_end,
+            "avatar_url": avatar_url,
         })
+        changed = True
+    elif avatar_url and not existing_entry.get("avatar_url"):
+        existing_entry["avatar_url"] = avatar_url
         changed = True
 
     if changed:
         course_collection.update_one(
             {"_id": file_hash},
-            {"$set": {"shared_discords": shared_discords}},
+            {
+                "$set": {"shared_discords": shared_discords, "created_at": doc.get("created_at", datetime.utcnow())},
+                "$setOnInsert": {"created_at": datetime.utcnow()},
+            },
             upsert=True
         )
 
-    return jsonify({"shared_discords": shared_discords, "added": not existing})
+    return jsonify({"shared_discords": shared_discords, "added": existing_entry is None})
 
 
 @app.route("/shared_discords", methods=["POST"])
@@ -590,27 +604,141 @@ def shared_discords():
 
     doc = course_collection.find_one({"_id": file_hash}) or {}
     shared_discords_list = doc.get("shared_discords", [])
-    shared_discords_list, changed = prune_expired_discords(shared_discords_list)
-    if changed:
-        course_collection.update_one(
-            {"_id": file_hash},
-            {"$set": {"shared_discords": shared_discords_list}},
-            upsert=True
-        )
 
     viewer_lower = viewer_handle.lower()
     is_opted_in = any(entry.get("handle", "").lower() == viewer_lower for entry in shared_discords_list)
     if not is_opted_in:
         return jsonify({"error": "opt-in required"}), 403
 
-    handles = [
-        entry.get("handle")
+    entries = [
+        {
+            "handle": entry.get("handle"),
+            "avatar_url": entry.get("avatar_url", "")
+        }
         for entry in shared_discords_list
         if entry.get("handle") and entry.get("handle").lower() != viewer_lower
     ]
-    handles = sorted(set(handles), key=str.lower)
 
-    return jsonify({"shared_discords": handles})
+    unique = {}
+    for entry in entries:
+        handle = entry.get("handle")
+        if not handle:
+            continue
+        key = handle.lower()
+        if key not in unique:
+            unique[key] = entry
+
+    sorted_entries = [unique[key] for key in sorted(unique.keys())]
+
+    return jsonify({"shared_discords": sorted_entries})
+
+
+@app.route("/discord/oauth/start", methods=["GET"])
+def discord_oauth_start():
+    if not DISCORD_CLIENT_ID or not DISCORD_REDIRECT_URI or not DISCORD_CLIENT_SECRET:
+        return jsonify({"error": "Discord OAuth is not configured"}), 500
+
+    state = secrets.token_urlsafe(16)
+    # Store state server-side (avoids cookie/session issues with popups)
+    _pending_oauth_states[state] = datetime.utcnow()
+    # Clean up states older than 10 minutes
+    cutoff = datetime.utcnow()
+    expired = [k for k, v in _pending_oauth_states.items() if (cutoff - v).total_seconds() > 600]
+    for k in expired:
+        _pending_oauth_states.pop(k, None)
+
+    params = {
+        "client_id": DISCORD_CLIENT_ID,
+        "redirect_uri": DISCORD_REDIRECT_URI,
+        "response_type": "code",
+        "scope": "identify",
+        "state": state,
+        "prompt": "consent",
+    }
+    auth_url = "https://discord.com/api/oauth2/authorize?" + urlencode(params)
+    return redirect(auth_url)
+
+
+@app.route("/discord/oauth/callback", methods=["GET"])
+def discord_oauth_callback():
+    error = request.args.get("error")
+    if error:
+        return f"Discord OAuth error: {error}", 400
+
+    code = request.args.get("code")
+    state = request.args.get("state")
+    if not code or not state or state not in _pending_oauth_states:
+        return "Invalid OAuth state", 400
+    _pending_oauth_states.pop(state, None)
+
+    token_response = requests.post(
+        "https://discord.com/api/oauth2/token",
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        data={
+            "client_id": DISCORD_CLIENT_ID,
+            "client_secret": DISCORD_CLIENT_SECRET,
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": DISCORD_REDIRECT_URI,
+        },
+        timeout=30,
+    )
+
+    if not token_response.ok:
+        return "Failed to get Discord token", 400
+
+    token_data = token_response.json()
+    access_token = token_data.get("access_token")
+    if not access_token:
+        return "Missing access token", 400
+
+    user_response = requests.get(
+        "https://discord.com/api/users/@me",
+        headers={"Authorization": f"Bearer {access_token}"},
+        timeout=30,
+    )
+
+    if not user_response.ok:
+        return "Failed to fetch Discord user", 400
+
+    user_data = user_response.json()
+    username = user_data.get("username", "")
+    discriminator = user_data.get("discriminator", "")
+    if discriminator and discriminator != "0":
+        handle = f"{username}#{discriminator}"
+    else:
+        handle = username
+
+    avatar_url = build_discord_avatar_url(user_data.get("id"), user_data.get("avatar"))
+
+    html = f"""
+<!DOCTYPE html>
+<html lang=\"en\">
+<head>
+  <meta charset=\"UTF-8\" />
+  <title>Discord Connected</title>
+</head>
+<body>
+  <script>
+    (function () {{
+      const payload = {{
+        type: 'discord-auth',
+        handle: {json.dumps(handle)},
+        avatar_url: {json.dumps(avatar_url)},
+      }};
+      if (window.opener) {{
+        window.opener.postMessage(payload, window.location.origin);
+        window.close();
+      }} else {{
+        document.body.textContent = 'Discord connected. You can close this window.';
+      }}
+    }})();
+  </script>
+</body>
+</html>
+"""
+
+    return html
 
 
 @app.route("/download_study_guide", methods=["POST"])

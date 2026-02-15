@@ -47,8 +47,13 @@
                         <span>Share my Discord to connect with classmates</span>
                     </div>
                     <div class="discord-opt-fields">
-                        <input type="text" id="discordHandle" placeholder="Discord handle (e.g., janedoe or janedoe#1234)">
-                        <input type="date" id="termEnd">
+                        <div class="discord-handle-group">
+                            <input type="text" id="discordHandle" placeholder="Discord handle (e.g., janedoe or janedoe#1234)">
+                            <button type="button" class="btn-discord" id="discordConnect">Connect Discord</button>
+                        </div>
+                        <div class="discord-avatar" id="discordAvatar" style="display: none;">
+                            <img id="discordAvatarImg" alt="Discord profile">
+                        </div>
                     </div>
                     <div class="discord-opt-hint">Visible only to others who opt in for the same syllabus hash.</div>
                 </div>

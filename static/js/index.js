@@ -22,7 +22,9 @@ const success = document.getElementById('success');
 const courseName = document.getElementById('courseName');
 const discordOptIn = document.getElementById('discordOptIn');
 const discordHandle = document.getElementById('discordHandle');
-const termEnd = document.getElementById('termEnd');
+const discordConnect = document.getElementById('discordConnect');
+const discordAvatar = document.getElementById('discordAvatar');
+const discordAvatarImg = document.getElementById('discordAvatarImg');
 const discordMatches = document.getElementById('discordMatches');
 const discordMatchesBody = document.getElementById('discordMatchesBody');
 const discordMatchesEmpty = document.getElementById('discordMatchesEmpty');
@@ -36,6 +38,7 @@ let fileHashesByCourseName = {}; // Map of courseName -> file_hash (for caching)
 let currentStudyPlanCourse = ''; // Track currently viewed study plan course
 const ALL_COURSES_VALUE = '__all__';
 let discordMatchesBySource = {}; // Map of filename -> array of handles
+let discordAvatarUrl = '';
 
 // Click to browse
 dropzone.addEventListener('click', () => fileInput.click());
@@ -84,15 +87,15 @@ function normalizeDiscordHandle(handle) {
     return handle.trim().replace(/^@/, '').trim();
 }
 
-function getTermEndValue() {
-    return termEnd && termEnd.value ? termEnd.value : '';
-}
-
-function setDefaultTermEnd() {
-    if (!termEnd || termEnd.value) return;
-    const now = new Date();
-    const year = now.getFullYear();
-    termEnd.value = `${year}-12-31`;
+function updateDiscordAvatarPreview(url) {
+    if (!discordAvatar || !discordAvatarImg) return;
+    if (!url) {
+        discordAvatar.style.display = 'none';
+        discordAvatarImg.removeAttribute('src');
+        return;
+    }
+    discordAvatarImg.src = url;
+    discordAvatar.style.display = 'inline-flex';
 }
 
 function setOptInFieldsEnabled(isEnabled) {
@@ -119,7 +122,14 @@ function renderDiscordMatches() {
                 </div>
             `;
         }
-        const pills = handles.map(handle => `<span class="discord-handle">${escapeHtml(handle)}</span>`).join('');
+        const pills = handles.map((entry) => {
+            const handle = entry.handle || '';
+            const avatarUrl = entry.avatar_url || '';
+            const avatarImg = avatarUrl
+                ? `<img src="${escapeHtml(avatarUrl)}" alt="">`
+                : '';
+            return `<span class="discord-handle">${avatarImg}${escapeHtml(handle)}</span>`;
+        }).join('');
         return `
             <div class="discord-course-block">
                 <div class="discord-course-title">${safeSource}</div>
@@ -135,8 +145,28 @@ discordOptIn.addEventListener('change', (e) => {
     setOptInFieldsEnabled(e.target.checked);
 });
 
-setDefaultTermEnd();
 setOptInFieldsEnabled(discordOptIn.checked);
+updateDiscordAvatarPreview(discordAvatarUrl);
+
+if (discordConnect) {
+    discordConnect.addEventListener('click', () => {
+        window.open('/discord/oauth/start', 'discordAuth', 'width=500,height=700');
+    });
+}
+
+window.addEventListener('message', (event) => {
+    if (event.origin !== window.location.origin) return;
+    if (!event.data || event.data.type !== 'discord-auth') return;
+    const handle = event.data.handle || '';
+    const avatarUrl = event.data.avatar_url || '';
+    if (handle) {
+        discordHandle.value = handle;
+        discordOptIn.checked = true;
+        setOptInFieldsEnabled(true);
+    }
+    discordAvatarUrl = avatarUrl;
+    updateDiscordAvatarPreview(avatarUrl);
+});
 
 function updateFileList() {
     if (selectedFiles.length === 0) {
@@ -267,7 +297,7 @@ uploadForm.addEventListener('submit', async (e) => {
                         body: JSON.stringify({
                             file_hash: fileHash,
                             discord_handle: handle,
-                            term_end: getTermEndValue()
+                            avatar_url: discordAvatarUrl
                         })
                     });
 
@@ -666,7 +696,8 @@ function resetForm() {
     fileInput.value = '';
     discordOptIn.checked = false;
     discordHandle.value = '';
-    setDefaultTermEnd();
+    discordAvatarUrl = '';
+    updateDiscordAvatarPreview('');
     setOptInFieldsEnabled(false);
     discordMatches.style.display = 'none';
     discordMatchesBody.innerHTML = '';
