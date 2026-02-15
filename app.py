@@ -9,6 +9,7 @@ from flask import Flask, request, jsonify, send_file, render_template
 from flask_cors import CORS
 import pdfplumber
 from dotenv import load_dotenv
+from pymongo.errors import DuplicateKeyError
 
 from backend.ics_converter import json_to_ics
 from backend.config.mongo import course_collection
@@ -96,7 +97,7 @@ def parse_flexible_date(date_str: str, default_year: int = None) -> str:
 # ----------------------------
 # OpenRouter (Gemini) Call
 # ----------------------------
-def call_openrouter_to_extract_assignments(text: str, file_hash: str) -> list:
+def call_openrouter_to_extract_assignments(text: str) -> list:
 
     prompt_system = """
 You are replacing a production LLM.
@@ -139,20 +140,6 @@ Text:
 """
 
     try:
-        cached = course_collection.find_one(
-                                            {"_id": file_hash}
-                                            , {"_id": 0})
-        if cached:
-            raw = cached["assignments"]
-
-            # remove fences
-            raw = raw.replace("```json", "").replace("```", "").strip()
-
-            parsed = json.loads(raw)
-
-            return parsed
-
-
         response = requests.post(
             OPENROUTER_URL,
             headers={
@@ -175,18 +162,16 @@ Text:
 
         response.raise_for_status()
         data = response.json()
-
         content = data["choices"][0]["message"]["content"]
 
     except Exception as e:
         raise RuntimeError(f"OpenRouter request failed: {e}")
 
-    # Strict JSON parsing
+    # Parse JSON from response
     try:
-        
-        course_collection.insert_one({"_id": file_hash, "assignments": content})
         return json.loads(content)
     except Exception:
+        # Try to extract JSON array from markdown or other wrapper
         start = content.find("[")
         end = content.rfind("]")
         if start != -1 and end != -1 and end > start:
@@ -212,18 +197,48 @@ def extract_assignments():
         return jsonify({"error": "missing file"}), 400
 
     file = request.files["file"]
+    filename = file.filename
     pdf_bytes = file.read()
     
-    file_hash = hashlib.md5(pdf_bytes).hexdigest()
+    # Generate SHA256 hash of PDF
+    file_hash = hashlib.sha256(pdf_bytes).hexdigest()
     
+    # Check cache first (if MongoDB is available)
+    if course_collection is not None:
+        try:
+            cached = course_collection.find_one({"file_hash": file_hash})
+            if cached and "assignments" in cached:
+                print(f"Cache hit for {filename} (hash: {file_hash[:8]}...)")
+                return jsonify(cached["assignments"])
+        except Exception as e:
+            print(f"Cache lookup failed: {e}")
+    
+    # Extract text from PDF
     text = extract_text_from_pdf_bytes(pdf_bytes)
     if not text.strip():
         return jsonify({"error": "no extractable text"}), 400
 
+    # Extract assignments (using fallback or API)
     if USE_LOCAL_FALLBACK:
         items = parse_events_local(text)
     else:
-        items = call_openrouter_to_extract_assignments(text, file_hash)
+        items = call_openrouter_to_extract_assignments(text)
+    
+    # Cache the result (if MongoDB is available)
+    if course_collection is not None:
+        try:
+            course_collection.insert_one({
+                "file_hash": file_hash,
+                "filename": filename,
+                "assignments": items,
+                "extracted_at": datetime.utcnow(),
+                "method": "local" if USE_LOCAL_FALLBACK else "api"
+            })
+            print(f"Cached assignments for {filename} (hash: {file_hash[:8]}...)")
+        except DuplicateKeyError:
+            print(f"Cache already exists for {filename} (race condition)")
+        except Exception as e:
+            print(f"Cache save failed: {e}")
 
     return jsonify(items)
 
