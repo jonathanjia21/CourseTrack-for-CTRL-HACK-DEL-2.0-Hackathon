@@ -1,26 +1,27 @@
-import os
-import json
-import re
-from io import BytesIO
-from datetime import datetime
 import hashlib
-import requests
-from flask import Flask, request, jsonify, send_file, render_template, redirect, url_for, session
+import json
+import os
+import pickle
+import re
 import secrets
+from datetime import datetime
+from io import BytesIO
 from urllib.parse import urlencode
-from flask_cors import CORS
+
 import pdfplumber
+import requests
 from dotenv import load_dotenv
-from pymongo.errors import DuplicateKeyError
-from google.oauth2.credentials import Credentials
+from flask import Flask, jsonify, redirect, render_template, request, send_file, session
+from flask_cors import CORS
 from google.auth.transport.requests import Request
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
-import pickle
+from pymongo.errors import DuplicateKeyError
 
-from backend.ics_converter import json_to_ics
 from backend.config.mongo import course_collection
+from backend.ics_converter import json_to_ics
 from backend.study_guide_generator import generate_study_guide_pdf
+
 
 load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
 
