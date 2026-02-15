@@ -291,7 +291,7 @@ uploadForm.addEventListener('submit', async (e) => {
             if (discordOptIn.checked && fileHash) {
                 const handle = normalizeDiscordHandle(discordHandle.value);
                 try {
-                    await fetch('/share_discord', {
+                    const shareResponse = await fetch('/share_discord', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
@@ -300,6 +300,10 @@ uploadForm.addEventListener('submit', async (e) => {
                             avatar_url: discordAvatarUrl
                         })
                     });
+
+                    if (!shareResponse.ok) {
+                        console.error('share_discord failed:', await shareResponse.text());
+                    }
 
                     const matchesResponse = await fetch('/shared_discords', {
                         method: 'POST',

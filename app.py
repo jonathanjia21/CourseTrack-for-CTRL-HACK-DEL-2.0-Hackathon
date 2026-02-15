@@ -573,14 +573,18 @@ def share_discord():
         changed = True
 
     if changed:
-        course_collection.update_one(
-            {"_id": file_hash},
-            {
-                "$set": {"shared_discords": shared_discords, "created_at": doc.get("created_at", datetime.utcnow())},
-                "$setOnInsert": {"created_at": datetime.utcnow()},
-            },
-            upsert=True
-        )
+        try:
+            course_collection.update_one(
+                {"_id": file_hash},
+                {"$set": {
+                    "shared_discords": shared_discords,
+                    "created_at": doc.get("created_at", datetime.utcnow()),
+                }},
+                upsert=True,
+            )
+        except Exception as e:
+            print(f"share_discord update failed: {e}")
+            return jsonify({"error": "database update failed"}), 500
 
     return jsonify({"shared_discords": shared_discords, "added": existing_entry is None})
 
