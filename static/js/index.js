@@ -20,6 +20,12 @@ const inlineGuideBody = document.getElementById('inlineGuideBody');
 const error = document.getElementById('error');
 const success = document.getElementById('success');
 const courseName = document.getElementById('courseName');
+const discordOptIn = document.getElementById('discordOptIn');
+const discordHandle = document.getElementById('discordHandle');
+const termEnd = document.getElementById('termEnd');
+const discordMatches = document.getElementById('discordMatches');
+const discordMatchesBody = document.getElementById('discordMatchesBody');
+const discordMatchesEmpty = document.getElementById('discordMatchesEmpty');
 
 let selectedFiles = [];
 let extractedAssignments = [];
@@ -29,6 +35,7 @@ let courseAssignmentsByName = {}; // Map of courseName -> assignments
 let fileHashesByCourseName = {}; // Map of courseName -> file_hash (for caching)
 let currentStudyPlanCourse = ''; // Track currently viewed study plan course
 const ALL_COURSES_VALUE = '__all__';
+let discordMatchesBySource = {}; // Map of filename -> array of handles
 
 // Click to browse
 dropzone.addEventListener('click', () => fileInput.click());
@@ -71,6 +78,65 @@ dropzone.addEventListener('drop', (e) => {
     selectedFiles = [...selectedFiles, ...files];
     updateFileList();
 });
+
+function normalizeDiscordHandle(handle) {
+    if (!handle) return '';
+    return handle.trim().replace(/^@/, '').trim();
+}
+
+function getTermEndValue() {
+    return termEnd && termEnd.value ? termEnd.value : '';
+}
+
+function setDefaultTermEnd() {
+    if (!termEnd || termEnd.value) return;
+    const now = new Date();
+    const year = now.getFullYear();
+    termEnd.value = `${year}-12-31`;
+}
+
+function setOptInFieldsEnabled(isEnabled) {
+    const fields = document.querySelector('.discord-opt-fields');
+    if (!fields) return;
+    fields.classList.toggle('active', isEnabled);
+}
+
+function renderDiscordMatches() {
+    const entries = Object.entries(discordMatchesBySource);
+    if (entries.length === 0) {
+        discordMatches.style.display = 'none';
+        return;
+    }
+
+    discordMatches.style.display = 'block';
+    discordMatchesBody.innerHTML = entries.map(([source, handles]) => {
+        const safeSource = escapeHtml(source);
+        if (!handles || handles.length === 0) {
+            return `
+                <div class="discord-course-block">
+                    <div class="discord-course-title">${safeSource}</div>
+                    <div class="discord-match-empty">No matches yet.</div>
+                </div>
+            `;
+        }
+        const pills = handles.map(handle => `<span class="discord-handle">${escapeHtml(handle)}</span>`).join('');
+        return `
+            <div class="discord-course-block">
+                <div class="discord-course-title">${safeSource}</div>
+                <div class="discord-handle-list">${pills}</div>
+            </div>
+        `;
+    }).join('');
+
+    discordMatchesEmpty.style.display = 'none';
+}
+
+discordOptIn.addEventListener('change', (e) => {
+    setOptInFieldsEnabled(e.target.checked);
+});
+
+setDefaultTermEnd();
+setOptInFieldsEnabled(discordOptIn.checked);
 
 function updateFileList() {
     if (selectedFiles.length === 0) {
@@ -137,6 +203,14 @@ uploadForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     if (selectedFiles.length === 0) return;
 
+    if (discordOptIn.checked) {
+        const handle = normalizeDiscordHandle(discordHandle.value);
+        if (!handle) {
+            showError('Please enter your Discord handle to opt in');
+            return;
+        }
+    }
+
     error.style.display = 'none';
     success.style.display = 'none';
     setLoading(true, 'Extracting assignments from PDFs...');
@@ -144,6 +218,7 @@ uploadForm.addEventListener('submit', async (e) => {
 
     try {
         extractedAssignments = [];
+        discordMatchesBySource = {};
         
         // Process each PDF
         for (let i = 0; i < selectedFiles.length; i++) {
@@ -182,9 +257,42 @@ uploadForm.addEventListener('submit', async (e) => {
             if (cachedStudyPlans && Object.keys(cachedStudyPlans).length > 0) {
                 Object.assign(studyPlansByCourseName, cachedStudyPlans);
             }
+
+            if (discordOptIn.checked && fileHash) {
+                const handle = normalizeDiscordHandle(discordHandle.value);
+                try {
+                    await fetch('/share_discord', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            file_hash: fileHash,
+                            discord_handle: handle,
+                            term_end: getTermEndValue()
+                        })
+                    });
+
+                    const matchesResponse = await fetch('/shared_discords', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            file_hash: fileHash,
+                            viewer_handle: handle
+                        })
+                    });
+
+                    if (matchesResponse.ok) {
+                        const matchesData = await matchesResponse.json();
+                        discordMatchesBySource[file.name] = matchesData.shared_discords || [];
+                    }
+                } catch (matchError) {
+                    console.error(matchError);
+                }
+            }
         }
 
         setLoading(false);
+
+        renderDiscordMatches();
         
         if (extractedAssignments.length === 0) {
             showError('No assignments found in uploaded PDFs');
@@ -552,9 +660,17 @@ function resetForm() {
     courseAssignmentsByName = {};
     fileHashesByCourseName = {};
     currentStudyPlanCourse = '';
+    discordMatchesBySource = {};
     fileList.innerHTML = '';
     submitBtn.disabled = true;
     fileInput.value = '';
+    discordOptIn.checked = false;
+    discordHandle.value = '';
+    setDefaultTermEnd();
+    setOptInFieldsEnabled(false);
+    discordMatches.style.display = 'none';
+    discordMatchesBody.innerHTML = '';
+    discordMatchesEmpty.style.display = 'block';
     studyPlanSelector.style.display = 'none';
     studyGuideInline.style.display = 'none';
     inlineGuideBody.innerHTML = '';

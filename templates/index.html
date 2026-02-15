@@ -40,6 +40,19 @@
                     <div class="file-list" id="fileList"></div>
                 </div>
 
+                <div class="form-group discord-opt-in">
+                    <label>Course Network (Optional)</label>
+                    <div class="discord-opt-row">
+                        <input type="checkbox" id="discordOptIn">
+                        <span>Share my Discord to connect with classmates</span>
+                    </div>
+                    <div class="discord-opt-fields">
+                        <input type="text" id="discordHandle" placeholder="Discord handle (e.g., janedoe or janedoe#1234)">
+                        <input type="date" id="termEnd">
+                    </div>
+                    <div class="discord-opt-hint">Visible only to others who opt in for the same syllabus hash.</div>
+                </div>
+
                 <button type="submit" id="submitBtn" disabled>
                     Generate Calendar
                 </button>
@@ -47,6 +60,15 @@
                 <div class="error" id="error"></div>
                 <div class="success" id="success"></div>
             </form>
+
+            <div class="discord-match" id="discordMatches" style="display: none;">
+                <div class="discord-match-header">
+                    <h3>Classmate Connections</h3>
+                    <p>Discord handles from others who opted in for matching syllabi.</p>
+                </div>
+                <div class="discord-match-body" id="discordMatchesBody"></div>
+                <div class="discord-match-empty" id="discordMatchesEmpty">No matches yet.</div>
+            </div>
         </section>
     </div>
 

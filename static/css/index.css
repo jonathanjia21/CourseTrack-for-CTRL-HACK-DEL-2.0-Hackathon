@@ -118,6 +118,119 @@ h1 {
     margin-bottom: 24px;
 }
 
+.discord-opt-in {
+    margin-top: 8px;
+}
+
+.discord-opt-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+    color: #3b2b52;
+    font-weight: 600;
+    margin-bottom: 12px;
+}
+
+.discord-opt-row input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    accent-color: var(--glow);
+}
+
+.discord-opt-fields {
+    display: grid;
+    grid-template-columns: minmax(180px, 1fr) minmax(150px, 220px);
+    gap: 12px;
+    opacity: 0.5;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+}
+
+.discord-opt-fields input[type="text"],
+.discord-opt-fields input[type="date"] {
+    width: 100%;
+    padding: 12px 14px;
+    border: 1px solid rgba(10, 10, 15, 0.12);
+    border-radius: 10px;
+    font-size: 13px;
+    background: #f8f5ff;
+}
+
+.discord-opt-fields.active {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.discord-opt-hint {
+    margin-top: 8px;
+    font-size: 11px;
+    color: #6b6578;
+}
+
+.discord-match {
+    margin-top: 24px;
+    padding: 18px 20px;
+    border-radius: 16px;
+    border: 1px solid rgba(61, 43, 122, 0.18);
+    background: linear-gradient(135deg, #fef6ff 0%, #eefbff 100%);
+}
+
+.discord-match-header h3 {
+    font-size: 16px;
+    color: #1a102e;
+    margin-bottom: 4px;
+}
+
+.discord-match-header p {
+    font-size: 12px;
+    color: #5f5c74;
+    margin-bottom: 12px;
+}
+
+.discord-match-body {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.discord-course-block {
+    background: #ffffff;
+    border-radius: 12px;
+    border: 1px solid rgba(10, 10, 15, 0.08);
+    padding: 12px 14px;
+}
+
+.discord-course-title {
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #3d2b7a;
+    margin-bottom: 8px;
+}
+
+.discord-handle-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.discord-handle {
+    background: rgba(61, 43, 122, 0.12);
+    color: #2a1b5a;
+    font-size: 12px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    font-weight: 600;
+}
+
+.discord-match-empty {
+    font-size: 12px;
+    color: #6b6578;
+    padding: 10px 0 2px;
+}
+
 label {
     display: block;
     margin-bottom: 10px;

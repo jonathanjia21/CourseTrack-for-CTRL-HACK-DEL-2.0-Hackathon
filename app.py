@@ -96,6 +96,43 @@ def parse_flexible_date(date_str: str, default_year: int = None) -> str:
 
 
 # ----------------------------
+# Discord Sharing Helpers
+# ----------------------------
+def normalize_discord_handle(handle: str) -> str:
+    if not handle:
+        return ""
+    handle = handle.strip()
+    if handle.startswith("@"):  # allow @ prefix
+        handle = handle[1:]
+    return handle.strip()
+
+
+def parse_date_yyyy_mm_dd(date_str: str):
+    if not date_str:
+        return None
+    try:
+        return datetime.strptime(date_str, "%Y-%m-%d").date()
+    except Exception:
+        return None
+
+
+def prune_expired_discords(shared_discords: list) -> tuple[list, bool]:
+    if not shared_discords:
+        return [], False
+    today = datetime.utcnow().date()
+    active = []
+    changed = False
+    for entry in shared_discords:
+        term_end_str = entry.get("term_end")
+        term_end = parse_date_yyyy_mm_dd(term_end_str)
+        if term_end and term_end < today:
+            changed = True
+            continue
+        active.append(entry)
+    return active, changed
+
+
+# ----------------------------
 # OpenRouter (Gemini) Call
 # ----------------------------
 def call_openrouter_to_extract_assignments(text: str) -> list:
@@ -488,6 +525,92 @@ def generate_study_plan_endpoint():
         return jsonify({"error": str(e)}), 500
 
     return jsonify(study_plan)
+
+
+@app.route("/share_discord", methods=["POST"])
+def share_discord():
+    if course_collection is None:
+        return jsonify({"error": "database unavailable"}), 503
+
+    payload = request.get_json()
+    if not isinstance(payload, dict):
+        return jsonify({"error": "expected JSON object"}), 400
+
+    file_hash = payload.get("file_hash")
+    discord_handle = normalize_discord_handle(payload.get("discord_handle", ""))
+    term_end = payload.get("term_end") or None
+
+    if not file_hash:
+        return jsonify({"error": "missing file_hash"}), 400
+    if not discord_handle:
+        return jsonify({"error": "missing discord_handle"}), 400
+    if term_end and not parse_date_yyyy_mm_dd(term_end):
+        return jsonify({"error": "term_end must be YYYY-MM-DD"}), 400
+
+    doc = course_collection.find_one({"_id": file_hash}) or {}
+    shared_discords = doc.get("shared_discords", [])
+    shared_discords, changed = prune_expired_discords(shared_discords)
+
+    lower_handle = discord_handle.lower()
+    existing = any(entry.get("handle", "").lower() == lower_handle for entry in shared_discords)
+    if not existing:
+        shared_discords.append({
+            "handle": discord_handle,
+            "created_at": datetime.utcnow().isoformat() + "Z",
+            "term_end": term_end,
+        })
+        changed = True
+
+    if changed:
+        course_collection.update_one(
+            {"_id": file_hash},
+            {"$set": {"shared_discords": shared_discords}},
+            upsert=True
+        )
+
+    return jsonify({"shared_discords": shared_discords, "added": not existing})
+
+
+@app.route("/shared_discords", methods=["POST"])
+def shared_discords():
+    if course_collection is None:
+        return jsonify({"error": "database unavailable"}), 503
+
+    payload = request.get_json()
+    if not isinstance(payload, dict):
+        return jsonify({"error": "expected JSON object"}), 400
+
+    file_hash = payload.get("file_hash")
+    viewer_handle = normalize_discord_handle(payload.get("viewer_handle", ""))
+
+    if not file_hash:
+        return jsonify({"error": "missing file_hash"}), 400
+    if not viewer_handle:
+        return jsonify({"error": "missing viewer_handle"}), 400
+
+    doc = course_collection.find_one({"_id": file_hash}) or {}
+    shared_discords_list = doc.get("shared_discords", [])
+    shared_discords_list, changed = prune_expired_discords(shared_discords_list)
+    if changed:
+        course_collection.update_one(
+            {"_id": file_hash},
+            {"$set": {"shared_discords": shared_discords_list}},
+            upsert=True
+        )
+
+    viewer_lower = viewer_handle.lower()
+    is_opted_in = any(entry.get("handle", "").lower() == viewer_lower for entry in shared_discords_list)
+    if not is_opted_in:
+        return jsonify({"error": "opt-in required"}), 403
+
+    handles = [
+        entry.get("handle")
+        for entry in shared_discords_list
+        if entry.get("handle") and entry.get("handle").lower() != viewer_lower
+    ]
+    handles = sorted(set(handles), key=str.lower)
+
+    return jsonify({"shared_discords": handles})
 
 
 @app.route("/download_study_guide", methods=["POST"])
