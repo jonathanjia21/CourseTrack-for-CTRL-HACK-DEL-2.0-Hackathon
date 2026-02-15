@@ -53,6 +53,7 @@ let currentCourseNameForCalendar = ''; // Store course name for Google Calendar 
 let discordAvatarUrl = '';
 let discordHandleValue = ''; // Set by Discord OAuth only
 const LOW_ACCURACY_THRESHOLD = 80;
+let canCacheStudyPlan = false; // Only true when preview data is completely untouched
 
 // Click to browse
 dropzone.addEventListener('click', () => fileInput.click());
@@ -514,6 +515,31 @@ function getAssignmentsFromPreview({ onlyChecked = false } = {}) {
         .filter(Boolean);
 }
 
+function hasPreviewModifications() {
+    for (let index = 0; index < extractedAssignments.length; index++) {
+        const original = extractedAssignments[index] || {};
+        const checkbox = document.getElementById(`assignment-${index}`);
+        const titleInput = document.getElementById(`assignment-title-${index}`);
+        const dateInput = document.getElementById(`assignment-date-${index}`);
+        const typeInput = document.getElementById(`assignment-type-${index}`);
+
+        const currentChecked = checkbox ? checkbox.checked : true;
+        const currentTitle = ((titleInput && titleInput.value) || '').trim();
+        const currentDueDate = (dateInput && dateInput.value) ? dateInput.value : '';
+        const currentType = ((typeInput && typeInput.value) || '').trim().toLowerCase();
+
+        const originalTitle = (original.title || '').trim();
+        const originalDueDate = (original.due_date || '').trim();
+        const originalType = (original.type || 'assignment').trim().toLowerCase();
+
+        if (!currentChecked) return true;
+        if (currentTitle !== originalTitle) return true;
+        if (currentDueDate !== originalDueDate) return true;
+        if (currentType !== originalType) return true;
+    }
+    return false;
+}
+
 // Cancel preview
 cancelPreview.addEventListener('click', () => {
     hidePreview();
@@ -837,7 +863,7 @@ generateStudyPlan.addEventListener('click', async () => {
             const requestPayload = {
                 data: assignments,
                 file_hash: fileHash,
-                allow_cache: false
+                allow_cache: canCacheStudyPlan
             };
             
             const response = await fetch(`/generate_study_plan?course_name=${encodeURIComponent(courseName)}`, {
@@ -909,6 +935,7 @@ function resetForm() {
     discordOptIn.checked = false;
     discordHandleValue = '';
     discordAvatarUrl = '';
+    canCacheStudyPlan = false;
     showDiscordConnected('', '');
     setOptInFieldsEnabled(false);
     discordMatches.style.display = 'none';
@@ -930,6 +957,7 @@ confirmGenerate.addEventListener('click', async () => {
     try {
         // Filter to only checked assignments
         const checkedAssignments = getAssignmentsFromPreview({ onlyChecked: true });
+        canCacheStudyPlan = !hasPreviewModifications();
 
         if (checkedAssignments.length === 0) {
             showError('Please select at least one assignment');
