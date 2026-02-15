@@ -12,13 +12,8 @@ const confirmGenerate = document.getElementById('confirmGenerate');
 const successModal = document.getElementById('successModal');
 const skipStudyPlan = document.getElementById('skipStudyPlan');
 const generateStudyPlan = document.getElementById('generateStudyPlan');
-const studyPlanModal = document.getElementById('studyPlanModal');
-const studyPlanBody = document.getElementById('studyPlanBody');
-const studyPlanCourseName = document.getElementById('studyPlanCourseName');
-const closeStudyPlan = document.getElementById('closeStudyPlan');
 const studyPlanSelector = document.getElementById('studyPlanSelector');
 const studyPlanDropdown = document.getElementById('studyPlanDropdown');
-const downloadPdf = document.getElementById('downloadPdf');
 const inlineDownloadPdf = document.getElementById('inlineDownloadPdf');
 const studyGuideInline = document.getElementById('studyGuideInline');
 const inlineGuideBody = document.getElementById('inlineGuideBody');
@@ -33,6 +28,7 @@ let studyPlansByCourseName = {}; // Map of courseName -> studyPlan
 let courseAssignmentsByName = {}; // Map of courseName -> assignments
 let fileHashesByCourseName = {}; // Map of courseName -> file_hash (for caching)
 let currentStudyPlanCourse = ''; // Track currently viewed study plan course
+const ALL_COURSES_VALUE = '__all__';
 
 // Click to browse
 dropzone.addEventListener('click', () => fileInput.click());
@@ -134,16 +130,6 @@ function showSuccessModal() {
 function hideSuccessModal() {
     successModal.classList.remove('active');
     successModal.setAttribute('aria-hidden', 'true');
-}
-
-function showStudyPlanModal() {
-    studyPlanModal.classList.add('active');
-    studyPlanModal.setAttribute('aria-hidden', 'false');
-}
-
-function hideStudyPlanModal() {
-    studyPlanModal.classList.remove('active');
-    studyPlanModal.setAttribute('aria-hidden', 'true');
 }
 
 // Form submission - Extract assignments and show preview
@@ -286,19 +272,10 @@ skipStudyPlan.addEventListener('click', () => {
     resetForm();
 });
 
-// Close study plan modal (without resetting form)
-closeStudyPlan.addEventListener('click', () => {
-    hideStudyPlanModal();
-    // Show the inline study guide when closing the modal
-    if (currentStudyPlanCourse && studyPlansByCourseName[currentStudyPlanCourse]) {
-        showInlineStudyGuide(currentStudyPlanCourse);
-    }
-});
-
 // Download study guide as PDF
 async function downloadStudyGuide() {
     const cName = currentStudyPlanCourse;
-    if (!cName || !studyPlansByCourseName[cName]) {
+    if (!cName || cName === ALL_COURSES_VALUE || !studyPlansByCourseName[cName]) {
         showError('No study plan available to download');
         return;
     }
@@ -334,9 +311,6 @@ async function downloadStudyGuide() {
     }
 }
 
-// Download buttons
-downloadPdf.addEventListener('click', () => downloadStudyGuide());
-
 // Download button in inline section
 inlineDownloadPdf.addEventListener('click', () => downloadStudyGuide());
 
@@ -356,30 +330,73 @@ function showInlineStudyGuide(cName) {
     }, 100);
 }
 
+function updateStudyGuideScrollbarTheme(selectedCourse) {
+    const existing = Array.from(studyGuideInline.classList).filter((name) => name.startsWith('sg-scroll-'));
+    existing.forEach((name) => studyGuideInline.classList.remove(name));
+
+    if (!selectedCourse || selectedCourse === ALL_COURSES_VALUE) {
+        studyGuideInline.classList.add('sg-scroll-neutral');
+        return;
+    }
+
+    const courseClass = getCourseColorClass(selectedCourse);
+    studyGuideInline.classList.add(`sg-scroll-${courseClass}`);
+}
+
 function renderInlineStudyGuide(studyPlan, assignments) {
     let html = '<div class="study-guide-rendered">';
+    const selectedCourse = studyPlanDropdown.value || currentStudyPlanCourse;
+    updateStudyGuideScrollbarTheme(selectedCourse);
 
     // Assignments table
     if (assignments && assignments.length > 0) {
-        html += '<div class="sg-section"><h3>Upcoming Assignments & Deadlines</h3>';
-        html += '<div class="sg-table-wrapper"><table class="sg-table"><thead><tr><th>Title</th><th>Due Date</th><th>Type</th></tr></thead><tbody>';
-        assignments.forEach(a => {
-            html += `<tr>
-                <td>${escapeHtml(a.title || 'Untitled')}</td>
-                <td>${escapeHtml(a.due_date || 'TBD')}</td>
-                <td><span class="sg-type-badge">${escapeHtml((a.type || 'assignment').charAt(0).toUpperCase() + (a.type || 'assignment').slice(1))}</span></td>
-            </tr>`;
+        const filteredAssignments = selectedCourse === ALL_COURSES_VALUE
+            ? assignments
+            : assignments.filter((item) => extractCourseCode(item.source) === selectedCourse);
+        const sortedAssignments = [...filteredAssignments].sort((a, b) => {
+            const aTime = a && a.due_date ? Date.parse(a.due_date) : Number.POSITIVE_INFINITY;
+            const bTime = b && b.due_date ? Date.parse(b.due_date) : Number.POSITIVE_INFINITY;
+            if (aTime === bTime) {
+                return 0;
+            }
+            return aTime - bTime;
         });
+
+        html += '<div class="sg-split">';
+        html += '<div class="sg-panel sg-panel-assignments">';
+        html += '<div class="sg-block-header">Upcoming Assignments & Deadlines</div>';
+        html += '<div class="sg-table-wrapper"><table class="sg-table"><thead><tr><th>Title</th><th>Due Date</th><th>Type</th></tr></thead><tbody>';
+        if (sortedAssignments.length === 0) {
+            html += '<tr><td colspan="3" class="sg-empty">No assignments found for this course</td></tr>';
+        } else {
+            sortedAssignments.forEach(a => {
+                const courseCode = extractCourseCode(a.source);
+                const typeLabel = (a.type || 'assignment').charAt(0).toUpperCase() + (a.type || 'assignment').slice(1);
+                const typeWithCourse = courseCode ? `${courseCode} • ${typeLabel}` : typeLabel;
+                const courseClass = courseCode ? `sg-type-${getCourseColorClass(courseCode)}` : 'sg-type-default';
+                html += `<tr>
+                    <td>${escapeHtml(a.title || 'Untitled')}</td>
+                    <td>${escapeHtml(a.due_date || 'TBD')}</td>
+                    <td><span class="sg-type-badge ${courseClass}">${escapeHtml(typeWithCourse)}</span></td>
+                </tr>`;
+            });
+        }
         html += '</tbody></table></div></div>';
+
+        html += '<div class="sg-panel">';
+        html += '<div class="sg-block-header">Study Guide</div>';
+        if (selectedCourse === ALL_COURSES_VALUE) {
+            html += '<div class="sg-empty">Select a course to view its study guide</div>';
+        }
     }
 
     // Overview
-    if (studyPlan.overview) {
+    if (studyPlan.overview && studyPlanDropdown.value !== ALL_COURSES_VALUE) {
         html += `<div class="sg-section"><h3>Overview</h3><p>${escapeHtml(studyPlan.overview)}</p></div>`;
     }
 
     // Weekly Schedule
-    if (studyPlan.weekly_schedule && Array.isArray(studyPlan.weekly_schedule)) {
+    if (studyPlan.weekly_schedule && Array.isArray(studyPlan.weekly_schedule) && studyPlanDropdown.value !== ALL_COURSES_VALUE) {
         html += '<div class="sg-section"><h3>Weekly Schedule</h3>';
         studyPlan.weekly_schedule.forEach((week, i) => {
             html += `<div class="sg-week"><h4>Week ${i + 1}</h4><p>${escapeHtml(week)}</p></div>`;
@@ -388,7 +405,7 @@ function renderInlineStudyGuide(studyPlan, assignments) {
     }
 
     // Study Tips
-    if (studyPlan.study_tips && Array.isArray(studyPlan.study_tips)) {
+    if (studyPlan.study_tips && Array.isArray(studyPlan.study_tips) && studyPlanDropdown.value !== ALL_COURSES_VALUE) {
         html += '<div class="sg-section"><h3>Study Tips</h3><ul class="sg-tips">';
         studyPlan.study_tips.forEach(tip => {
             html += `<li>${escapeHtml(tip)}</li>`;
@@ -397,22 +414,28 @@ function renderInlineStudyGuide(studyPlan, assignments) {
     }
 
     // Resource Recommendations
-    if (studyPlan.resource_recommendations) {
+    if (studyPlan.resource_recommendations && studyPlanDropdown.value !== ALL_COURSES_VALUE) {
         html += `<div class="sg-section"><h3>Resource Recommendations</h3><p>${escapeHtml(studyPlan.resource_recommendations)}</p></div>`;
     }
 
-    html += '</div>';
+    if (assignments && assignments.length > 0) {
+        html += '</div></div>';
+    }
     inlineGuideBody.innerHTML = html;
 }
 
 // Study plan dropdown selector
 studyPlanDropdown.addEventListener('change', (e) => {
     const selectedCourseName = e.target.value;
+    if (selectedCourseName === ALL_COURSES_VALUE) {
+        currentStudyPlanCourse = ALL_COURSES_VALUE;
+        renderInlineStudyGuide({}, currentCheckedAssignments);
+        studyGuideInline.style.display = 'block';
+        studyPlanSelector.style.display = 'block';
+        return;
+    }
     if (selectedCourseName && studyPlansByCourseName[selectedCourseName]) {
         currentStudyPlanCourse = selectedCourseName;
-        studyPlanCourseName.textContent = `${selectedCourseName} Study Plan`;
-        renderStudyPlan(studyPlansByCourseName[selectedCourseName]);
-        showStudyPlanModal();
         showInlineStudyGuide(selectedCourseName);
     }
 });
@@ -493,9 +516,6 @@ generateStudyPlan.addEventListener('click', async () => {
         if (courseNames.length > 0) {
             currentStudyPlanCourse = courseNames[0];
             studyPlanDropdown.value = courseNames[0];
-            studyPlanCourseName.textContent = `${courseNames[0]} Study Plan`;
-            renderStudyPlan(studyPlansByCourseName[courseNames[0]]);
-            showStudyPlanModal();
             showInlineStudyGuide(courseNames[0]);
         }
 
@@ -510,7 +530,10 @@ generateStudyPlan.addEventListener('click', async () => {
 
 function populateStudyPlanDropdown(courseNames) {
     // Keep the first option placeholder
-    const options = ['<option value="">-- Select a course --</option>'];
+    const options = [
+        '<option value="">-- Select a course --</option>',
+        `<option value="${ALL_COURSES_VALUE}">All Courses</option>`
+    ];
     
     courseNames.forEach(courseName => {
         options.push(`<option value="${escapeHtml(courseName)}">${escapeHtml(courseName)}</option>`);
@@ -536,52 +559,6 @@ function resetForm() {
     studyGuideInline.style.display = 'none';
     inlineGuideBody.innerHTML = '';
     populateStudyPlanDropdown([]);
-}
-
-function renderStudyPlan(studyPlan) {
-    let html = '<div class="study-plan-content-inner">';
-    
-    if (studyPlan.overview) {
-        html += `
-            <div class="study-plan-section">
-                <h3>Overview</h3>
-                <p>${escapeHtml(studyPlan.overview)}</p>
-            </div>
-        `;
-    }
-
-    if (studyPlan.weekly_schedule && Array.isArray(studyPlan.weekly_schedule)) {
-        html += '<div class="study-plan-section"><h3>Weekly Schedule</h3>';
-        studyPlan.weekly_schedule.forEach((week, index) => {
-            html += `
-                <div class="study-plan-week">
-                    <h4>Week ${index + 1}</h4>
-                    <p>${escapeHtml(week)}</p>
-                </div>
-            `;
-        });
-        html += '</div>';
-    }
-
-    if (studyPlan.study_tips && Array.isArray(studyPlan.study_tips)) {
-        html += '<div class="study-plan-section"><h3>Study Tips</h3><ul>';
-        studyPlan.study_tips.forEach((tip) => {
-            html += `<li>${escapeHtml(tip)}</li>`;
-        });
-        html += '</ul></div>';
-    }
-
-    if (studyPlan.resource_recommendations) {
-        html += `
-            <div class="study-plan-section">
-                <h3>Resource Recommendations</h3>
-                <p>${escapeHtml(studyPlan.resource_recommendations)}</p>
-            </div>
-        `;
-    }
-
-    html += '</div>';
-    studyPlanBody.innerHTML = html;
 }
 
 // Generate calendar from selected assignments
@@ -694,4 +671,13 @@ function showSuccess(msg) {
     success.textContent = msg;
     success.style.display = 'block';
     error.style.display = 'none';
+}
+
+function getCourseColorClass(courseCode) {
+    const palettes = ['a', 'b', 'c', 'd', 'e', 'f'];
+    let hash = 0;
+    for (let i = 0; i < courseCode.length; i++) {
+        hash = (hash * 31 + courseCode.charCodeAt(i)) % 997;
+    }
+    return palettes[hash % palettes.length];
 }

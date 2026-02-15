@@ -721,135 +721,6 @@ button:disabled {
     max-width: 200px;
 }
 
-/* Study Plan Modal Styles */
-.study-plan-modal {
-    position: fixed;
-    inset: 0;
-    background: rgba(7, 6, 16, 0.92);
-    backdrop-filter: blur(10px);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.3s ease;
-    z-index: 20;
-    padding: 20px;
-}
-
-.study-plan-modal.active {
-    opacity: 1;
-    pointer-events: all;
-}
-
-.study-plan-content {
-    background: var(--panel);
-    border-radius: 20px;
-    width: min(720px, 100%);
-    max-height: 85vh;
-    display: flex;
-    flex-direction: column;
-    box-shadow: 0 40px 100px rgba(0, 0, 0, 0.6);
-    border: 1px solid rgba(255, 90, 224, 0.2);
-}
-
-.study-plan-header {
-    padding: 28px 32px 20px;
-    border-bottom: 1px solid rgba(10, 10, 15, 0.08);
-}
-
-.study-plan-header h2 {
-    font-size: 22px;
-    color: var(--ink);
-    margin-bottom: 6px;
-}
-
-.study-plan-subtitle {
-    font-size: 13px;
-    color: #5f5c74;
-}
-
-.study-plan-body {
-    padding: 24px 32px;
-    overflow-y: auto;
-    flex: 1;
-}
-
-.study-plan-content-inner {
-    display: flex;
-    flex-direction: column;
-    gap: 20px;
-}
-
-.study-plan-section {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-}
-
-.study-plan-section h3 {
-    font-size: 16px;
-    font-weight: 600;
-    color: var(--ink);
-    margin-bottom: 8px;
-}
-
-.study-plan-section p {
-    font-size: 14px;
-    color: #5f5c74;
-    line-height: 1.6;
-}
-
-.study-plan-section ul {
-    list-style-type: none;
-    padding-left: 0;
-}
-
-.study-plan-section li {
-    font-size: 14px;
-    color: #5f5c74;
-    padding: 8px 0 8px 24px;
-    position: relative;
-    line-height: 1.5;
-}
-
-.study-plan-section li:before {
-    content: '→';
-    position: absolute;
-    left: 0;
-    color: var(--glow);
-    font-weight: 600;
-}
-
-.study-plan-week {
-    padding: 16px;
-    background: #f6f2ff;
-    border-radius: 12px;
-    border-left: 4px solid var(--glow);
-}
-
-.study-plan-week h4 {
-    font-size: 15px;
-    color: var(--ink);
-    margin-bottom: 8px;
-    font-weight: 600;
-}
-
-.study-plan-week p {
-    font-size: 13px;
-    color: #5f5c74;
-    margin: 0;
-}
-
-.study-plan-footer {
-    padding: 20px 32px;
-    border-top: 1px solid rgba(10, 10, 15, 0.08);
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 12px;
-}
-
 .btn-download {
     display: inline-flex;
     align-items: center;
@@ -893,6 +764,67 @@ button:disabled {
     border: 1px solid rgba(255, 90, 224, 0.2);
     animation: fadeSlideIn 0.5s ease;
     overflow: hidden;
+    --scrollbar-track: rgba(240, 238, 255, 0.6);
+    --scrollbar-thumb-start: rgba(255, 90, 224, 0.75);
+    --scrollbar-thumb-end: rgba(43, 252, 245, 0.75);
+    --scrollbar-thumb-hover-start: rgba(255, 90, 224, 0.95);
+    --scrollbar-thumb-hover-end: rgba(43, 252, 245, 0.95);
+}
+
+.study-guide-inline.sg-scroll-neutral {
+    --scrollbar-track: rgba(230, 232, 238, 0.7);
+    --scrollbar-thumb-start: rgba(120, 122, 136, 0.8);
+    --scrollbar-thumb-end: rgba(150, 152, 168, 0.8);
+    --scrollbar-thumb-hover-start: rgba(120, 122, 136, 0.95);
+    --scrollbar-thumb-hover-end: rgba(150, 152, 168, 0.95);
+}
+
+.study-guide-inline.sg-scroll-a {
+    --scrollbar-track: rgba(255, 230, 246, 0.7);
+    --scrollbar-thumb-start: rgba(255, 90, 224, 0.8);
+    --scrollbar-thumb-end: rgba(210, 40, 185, 0.8);
+    --scrollbar-thumb-hover-start: rgba(255, 90, 224, 0.98);
+    --scrollbar-thumb-hover-end: rgba(210, 40, 185, 0.98);
+}
+
+.study-guide-inline.sg-scroll-b {
+    --scrollbar-track: rgba(220, 255, 252, 0.7);
+    --scrollbar-thumb-start: rgba(43, 252, 245, 0.85);
+    --scrollbar-thumb-end: rgba(12, 170, 165, 0.85);
+    --scrollbar-thumb-hover-start: rgba(43, 252, 245, 0.98);
+    --scrollbar-thumb-hover-end: rgba(12, 170, 165, 0.98);
+}
+
+.study-guide-inline.sg-scroll-c {
+    --scrollbar-track: rgba(230, 228, 255, 0.7);
+    --scrollbar-thumb-start: rgba(61, 43, 122, 0.85);
+    --scrollbar-thumb-end: rgba(42, 27, 90, 0.85);
+    --scrollbar-thumb-hover-start: rgba(61, 43, 122, 0.98);
+    --scrollbar-thumb-hover-end: rgba(42, 27, 90, 0.98);
+}
+
+.study-guide-inline.sg-scroll-d {
+    --scrollbar-track: rgba(255, 228, 233, 0.7);
+    --scrollbar-thumb-start: rgba(255, 90, 110, 0.85);
+    --scrollbar-thumb-end: rgba(178, 36, 50, 0.85);
+    --scrollbar-thumb-hover-start: rgba(255, 90, 110, 0.98);
+    --scrollbar-thumb-hover-end: rgba(178, 36, 50, 0.98);
+}
+
+.study-guide-inline.sg-scroll-e {
+    --scrollbar-track: rgba(220, 240, 255, 0.7);
+    --scrollbar-thumb-start: rgba(0, 170, 255, 0.85);
+    --scrollbar-thumb-end: rgba(12, 74, 122, 0.85);
+    --scrollbar-thumb-hover-start: rgba(0, 170, 255, 0.98);
+    --scrollbar-thumb-hover-end: rgba(12, 74, 122, 0.98);
+}
+
+.study-guide-inline.sg-scroll-f {
+    --scrollbar-track: rgba(255, 244, 214, 0.7);
+    --scrollbar-thumb-start: rgba(255, 200, 80, 0.85);
+    --scrollbar-thumb-end: rgba(180, 125, 20, 0.85);
+    --scrollbar-thumb-hover-start: rgba(255, 200, 80, 0.98);
+    --scrollbar-thumb-hover-end: rgba(180, 125, 20, 0.98);
 }
 
 @keyframes fadeSlideIn {
@@ -962,6 +894,8 @@ button:disabled {
     max-height: 70vh;
     overflow-y: auto;
     scroll-behavior: smooth;
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb-start) var(--scrollbar-track);
 }
 
 /* Scrollbar styling */
@@ -969,14 +903,53 @@ button:disabled {
     width: 6px;
 }
 
+.study-guide-inline-body::-webkit-scrollbar-button {
+    display: none;
+    width: 0;
+    height: 0;
+}
+
 .study-guide-inline-body::-webkit-scrollbar-track {
-    background: #f0eeff;
+    background: var(--scrollbar-track);
     border-radius: 3px;
 }
 
 .study-guide-inline-body::-webkit-scrollbar-thumb {
-    background: linear-gradient(180deg, var(--glow), var(--glow-2));
+    background: linear-gradient(180deg, var(--scrollbar-thumb-start), var(--scrollbar-thumb-end));
     border-radius: 3px;
+}
+
+.study-guide-inline-body::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(180deg, var(--scrollbar-thumb-hover-start), var(--scrollbar-thumb-hover-end));
+}
+
+.sg-panel {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb-start) var(--scrollbar-track);
+}
+
+.sg-panel::-webkit-scrollbar {
+    width: 6px;
+}
+
+.sg-panel::-webkit-scrollbar-button {
+    display: none;
+    width: 0;
+    height: 0;
+}
+
+.sg-panel::-webkit-scrollbar-track {
+    background: var(--scrollbar-track);
+    border-radius: 3px;
+}
+
+.sg-panel::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, var(--scrollbar-thumb-start), var(--scrollbar-thumb-end));
+    border-radius: 3px;
+}
+
+.sg-panel::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(180deg, var(--scrollbar-thumb-hover-start), var(--scrollbar-thumb-hover-end));
 }
 
 /* Rendered study guide content */
@@ -984,6 +957,47 @@ button:disabled {
     display: flex;
     flex-direction: column;
     gap: 24px;
+}
+
+.sg-split {
+    display: grid;
+    grid-template-columns: minmax(240px, 1fr) minmax(280px, 1fr);
+    gap: 18px;
+}
+
+.sg-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    padding: 16px 18px;
+    border-radius: 14px;
+    background: #ffffff;
+    border: 1px solid rgba(10, 10, 15, 0.06);
+    box-shadow: 0 10px 24px rgba(10, 8, 20, 0.08);
+    max-height: 60vh;
+    overflow-y: auto;
+}
+
+.sg-panel-assignments {
+    align-self: start;
+}
+
+.sg-block-header {
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    font-weight: 700;
+    color: #3d2b7a;
+}
+
+.sg-empty {
+    padding: 18px;
+    border-radius: 12px;
+    background: #faf9ff;
+    border: 1px dashed rgba(61, 43, 122, 0.25);
+    color: #5f5c74;
+    font-size: 13px;
+    text-align: center;
 }
 
 .sg-section h3 {
@@ -1052,6 +1066,41 @@ button:disabled {
     text-transform: capitalize;
 }
 
+.sg-type-default {
+    background: rgba(255, 191, 31, 0.2);
+    color: #8d6b00;
+}
+
+.sg-type-a {
+    background: rgba(255, 90, 224, 0.18);
+    color: #8a1f6d;
+}
+
+.sg-type-b {
+    background: rgba(43, 252, 245, 0.18);
+    color: #0b5f5a;
+}
+
+.sg-type-c {
+    background: rgba(61, 43, 122, 0.2);
+    color: #2a1b5a;
+}
+
+.sg-type-d {
+    background: rgba(255, 90, 110, 0.18);
+    color: #8b2232;
+}
+
+.sg-type-e {
+    background: rgba(0, 170, 255, 0.18);
+    color: #0c4a7a;
+}
+
+.sg-type-f {
+    background: rgba(255, 200, 80, 0.25);
+    color: #7a4e00;
+}
+
 .sg-week {
     padding: 16px;
     background: #f6f2ff;
@@ -1112,17 +1161,6 @@ button:disabled {
         max-width: 100%;
     }
 
-    .study-plan-header,
-    .study-plan-body,
-    .study-plan-footer {
-        padding-left: 20px;
-        padding-right: 20px;
-    }
-
-    .study-plan-footer {
-        flex-direction: column;
-    }
-
     .study-guide-inline-header {
         padding: 20px;
     }
@@ -1134,6 +1172,10 @@ button:disabled {
     .study-guide-inline-controls {
         width: 100%;
         flex-wrap: wrap;
+    }
+
+    .sg-split {
+        grid-template-columns: 1fr;
     }
 
     .study-guide-course-selector {

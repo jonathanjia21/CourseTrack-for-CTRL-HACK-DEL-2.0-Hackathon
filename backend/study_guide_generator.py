@@ -1,5 +1,5 @@
 """
-Generate downloadable study guides in PDF and DOCX formats from study plan data.
+Generate downloadable study guides in PDF format from study plan data.
 """
 from io import BytesIO
 from datetime import datetime
@@ -13,7 +13,7 @@ from reportlab.platypus import (
     SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
     HRFlowable, ListFlowable, ListItem
 )
-from reportlab.lib.enums import TA_CENTER, TA_LEFT
+from reportlab.lib.enums import TA_CENTER
 
 
 # ================================================================
@@ -191,125 +191,3 @@ def generate_study_guide_pdf(study_plan: dict, course_name: str, assignments: li
     return buffer.getvalue()
 
 
-# ================================================================
-# DOCX Generation
-# ================================================================
-def generate_study_guide_docx(study_plan: dict, course_name: str, assignments: list = None) -> bytes:
-    """
-    Generate a styled DOCX study guide from study plan data.
-
-    Args:
-        study_plan: Dict with overview, weekly_schedule, study_tips, resource_recommendations
-        course_name: Name of the course
-        assignments: Optional list of assignment dicts with title, due_date, type
-
-    Returns:
-        DOCX file as bytes
-    """
-    doc = Document()
-
-    # --- Styles ---
-    style = doc.styles['Normal']
-    font = style.font
-    font.name = 'Calibri'
-    font.size = Pt(11)
-    font.color.rgb = RGBColor(0x33, 0x33, 0x33)
-
-    # --- Title ---
-    title = doc.add_heading('Study Guide', level=0)
-    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    for run in title.runs:
-        run.font.color.rgb = RGBColor(0x1a, 0x10, 0x2e)
-
-    subtitle = doc.add_paragraph()
-    subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    run = subtitle.add_run(course_name)
-    run.font.size = Pt(16)
-    run.font.color.rgb = RGBColor(0x3d, 0x2b, 0x7a)
-    run.bold = True
-
-    date_para = doc.add_paragraph()
-    date_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    run = date_para.add_run(f"Generated on {datetime.now().strftime('%B %d, %Y')}")
-    run.font.size = Pt(10)
-    run.font.color.rgb = RGBColor(0x5f, 0x5c, 0x74)
-
-    doc.add_paragraph('')  # spacer
-
-    # --- Assignments Table ---
-    if assignments and len(assignments) > 0:
-        heading = doc.add_heading('Upcoming Assignments & Deadlines', level=1)
-        for run in heading.runs:
-            run.font.color.rgb = RGBColor(0x3d, 0x2b, 0x7a)
-
-        table = doc.add_table(rows=1, cols=3)
-        table.style = 'Light Grid Accent 1'
-        table.autofit = True
-
-        # Header
-        hdr_cells = table.rows[0].cells
-        hdr_cells[0].text = 'Title'
-        hdr_cells[1].text = 'Due Date'
-        hdr_cells[2].text = 'Type'
-
-        for cell in hdr_cells:
-            for paragraph in cell.paragraphs:
-                for run in paragraph.runs:
-                    run.bold = True
-
-        for a in assignments:
-            row_cells = table.add_row().cells
-            row_cells[0].text = a.get('title', 'Untitled')
-            row_cells[1].text = a.get('due_date', 'TBD')
-            row_cells[2].text = a.get('type', 'assignment').capitalize()
-
-        doc.add_paragraph('')  # spacer
-
-    # --- Overview ---
-    if study_plan.get('overview'):
-        heading = doc.add_heading('Overview', level=1)
-        for run in heading.runs:
-            run.font.color.rgb = RGBColor(0x3d, 0x2b, 0x7a)
-        doc.add_paragraph(study_plan['overview'])
-
-    # --- Weekly Schedule ---
-    if study_plan.get('weekly_schedule') and isinstance(study_plan['weekly_schedule'], list):
-        heading = doc.add_heading('Weekly Schedule', level=1)
-        for run in heading.runs:
-            run.font.color.rgb = RGBColor(0x3d, 0x2b, 0x7a)
-
-        for i, week in enumerate(study_plan['weekly_schedule']):
-            week_heading = doc.add_heading(f'Week {i + 1}', level=2)
-            for run in week_heading.runs:
-                run.font.color.rgb = RGBColor(0xff, 0x5a, 0xe0)
-            doc.add_paragraph(week)
-
-    # --- Study Tips ---
-    if study_plan.get('study_tips') and isinstance(study_plan['study_tips'], list):
-        heading = doc.add_heading('Study Tips', level=1)
-        for run in heading.runs:
-            run.font.color.rgb = RGBColor(0x3d, 0x2b, 0x7a)
-
-        for tip in study_plan['study_tips']:
-            para = doc.add_paragraph(style='List Bullet')
-            para.add_run(tip)
-
-    # --- Resource Recommendations ---
-    if study_plan.get('resource_recommendations'):
-        heading = doc.add_heading('Resource Recommendations', level=1)
-        for run in heading.runs:
-            run.font.color.rgb = RGBColor(0x3d, 0x2b, 0x7a)
-        doc.add_paragraph(study_plan['resource_recommendations'])
-
-    # --- Footer ---
-    doc.add_paragraph('')
-    footer = doc.add_paragraph()
-    footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    run = footer.add_run('Generated by CourseTrack — Your AI-powered academic companion')
-    run.font.size = Pt(9)
-    run.font.color.rgb = RGBColor(0x99, 0x99, 0x99)
-    run.italic = True
-
-    buffer = BytesIO()
-    doc.save(buffer)
-    return buffer.getvalue()
