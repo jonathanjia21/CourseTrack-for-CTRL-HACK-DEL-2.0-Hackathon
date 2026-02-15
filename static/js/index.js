@@ -118,17 +118,20 @@ function renderDiscordMatches() {
             return `
                 <div class="discord-course-block">
                     <div class="discord-course-title">${safeSource}</div>
-                    <div class="discord-match-empty">No matches yet.</div>
+                    <div class="discord-match-empty">No classmates have opted in yet.</div>
                 </div>
             `;
         }
         const pills = handles.map((entry) => {
             const handle = entry.handle || '';
             const avatarUrl = entry.avatar_url || '';
+            const isYou = entry.is_you || false;
+            const defaultAvatar = `<span class="discord-avatar-placeholder">&#128100;</span>`;
             const avatarImg = avatarUrl
-                ? `<img src="${escapeHtml(avatarUrl)}" alt="">`
-                : '';
-            return `<span class="discord-handle">${avatarImg}${escapeHtml(handle)}</span>`;
+                ? `<img src="${escapeHtml(avatarUrl)}" alt="" onerror="this.outerHTML='<span class=\'discord-avatar-placeholder\'>&#128100;</span>'">`
+                : defaultAvatar;
+            const youBadge = isYou ? ' <span class="discord-you-badge">(you)</span>' : '';
+            return `<span class="discord-handle${isYou ? ' discord-handle-you' : ''}">${avatarImg}${escapeHtml(handle)}${youBadge}</span>`;
         }).join('');
         return `
             <div class="discord-course-block">
@@ -411,7 +414,11 @@ cancelPreview.addEventListener('click', () => {
 // Skip study plan
 skipStudyPlan.addEventListener('click', () => {
     hideSuccessModal();
+    // Preserve discord matches across skip
+    const savedMatches = { ...discordMatchesBySource };
     resetForm();
+    discordMatchesBySource = savedMatches;
+    renderDiscordMatches();
 });
 
 // Download study guide as PDF

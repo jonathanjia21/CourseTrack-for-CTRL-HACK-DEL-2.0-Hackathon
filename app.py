@@ -614,23 +614,19 @@ def shared_discords():
     if not is_opted_in:
         return jsonify({"error": "opt-in required"}), 403
 
-    entries = [
-        {
-            "handle": entry.get("handle"),
-            "avatar_url": entry.get("avatar_url", "")
-        }
-        for entry in shared_discords_list
-        if entry.get("handle") and entry.get("handle").lower() != viewer_lower
-    ]
-
+    # Return ALL opted-in users (mark the viewer with is_you)
     unique = {}
-    for entry in entries:
+    for entry in shared_discords_list:
         handle = entry.get("handle")
         if not handle:
             continue
         key = handle.lower()
         if key not in unique:
-            unique[key] = entry
+            unique[key] = {
+                "handle": handle,
+                "avatar_url": entry.get("avatar_url", ""),
+                "is_you": key == viewer_lower,
+            }
 
     sorted_entries = [unique[key] for key in sorted(unique.keys())]
 
