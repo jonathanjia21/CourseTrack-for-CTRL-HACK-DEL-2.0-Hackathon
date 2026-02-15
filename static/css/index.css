@@ -140,21 +140,83 @@ h1 {
 
 .discord-opt-fields {
     display: grid;
-    grid-template-columns: minmax(180px, 1fr) minmax(150px, 220px);
+    grid-template-columns: 1fr;
     gap: 12px;
     opacity: 0.5;
     pointer-events: none;
     transition: opacity 0.2s ease;
 }
 
-.discord-opt-fields input[type="text"],
-.discord-opt-fields input[type="date"] {
-    width: 100%;
-    padding: 12px 14px;
-    border: 1px solid rgba(10, 10, 15, 0.12);
+.btn-discord {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 20px;
     border-radius: 10px;
+    border: 1px solid rgba(88, 101, 242, 0.3);
+    background: rgba(88, 101, 242, 0.1);
+    color: #5865F2;
     font-size: 13px;
-    background: #f8f5ff;
+    font-weight: 700;
+    cursor: pointer;
+    width: auto;
+    margin: 0;
+    transition: background 0.2s, border-color 0.2s;
+}
+
+.btn-discord:hover {
+    background: rgba(88, 101, 242, 0.2);
+    border-color: rgba(88, 101, 242, 0.5);
+}
+
+.btn-discord-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+}
+
+.btn-discord-icon svg {
+    width: 16px;
+    height: 16px;
+}
+
+.discord-connected {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+    border-radius: 12px;
+    background: rgba(87, 242, 135, 0.08);
+    border: 1px solid rgba(87, 242, 135, 0.3);
+}
+
+.discord-connected-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border: 2px solid rgba(87, 242, 135, 0.4);
+    object-fit: cover;
+}
+
+.discord-connected-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.discord-connected-name {
+    font-size: 14px;
+    font-weight: 700;
+    color: #1a102e;
+}
+
+.discord-connected-badge {
+    font-size: 11px;
+    font-weight: 600;
+    color: #3ba55c;
+    letter-spacing: 0.03em;
 }
 
 .discord-opt-fields.active {
@@ -217,12 +279,45 @@ h1 {
 }
 
 .discord-handle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
     background: rgba(61, 43, 122, 0.12);
     color: #2a1b5a;
     font-size: 12px;
-    padding: 6px 10px;
+    padding: 6px 10px 6px 6px;
     border-radius: 999px;
     font-weight: 600;
+}
+
+.discord-handle img {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    object-fit: cover;
+}
+
+.discord-avatar-placeholder {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: rgba(61, 43, 122, 0.18);
+    font-size: 12px;
+    line-height: 1;
+}
+
+.discord-handle-you {
+    background: rgba(88, 101, 242, 0.18);
+    border: 1px solid rgba(88, 101, 242, 0.35);
+}
+
+.discord-you-badge {
+    font-size: 10px;
+    color: #5865F2;
+    font-weight: 500;
 }
 
 .discord-match-empty {
@@ -607,9 +702,19 @@ button:disabled {
     transition: all 0.2s;
 }
 
+.assignment-item.low-accuracy {
+    background: linear-gradient(135deg, #fff1f1 0%, #ffe3e3 100%);
+    border-color: rgba(205, 47, 47, 0.45);
+}
+
 .assignment-item:hover {
     box-shadow: 0 4px 12px rgba(255, 90, 224, 0.15);
     border-color: rgba(255, 90, 224, 0.3);
+}
+
+.assignment-item.low-accuracy:hover {
+    box-shadow: 0 4px 12px rgba(205, 47, 47, 0.24);
+    border-color: rgba(205, 47, 47, 0.65);
 }
 
 .assignment-item.unchecked {
@@ -630,11 +735,41 @@ button:disabled {
     flex: 1;
 }
 
-.assignment-title {
+.assignment-edit-grid {
+    display: grid;
+    gap: 10px;
+    grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.assignment-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.assignment-field-label {
+    font-size: 11px;
     font-weight: 600;
-    font-size: 15px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #5f5c74;
+}
+
+.assignment-input {
+    width: 100%;
+    border: 1px solid rgba(10, 10, 15, 0.15);
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 14px;
+    font-family: inherit;
     color: #1a102e;
-    margin-bottom: 4px;
+    background: rgba(255, 255, 255, 0.75);
+}
+
+.assignment-input:focus {
+    outline: none;
+    border-color: rgba(255, 90, 224, 0.55);
+    box-shadow: 0 0 0 3px rgba(255, 90, 224, 0.16);
 }
 
 .assignment-meta {
@@ -657,6 +792,24 @@ button:disabled {
     border-radius: 6px;
     background: rgba(255, 191, 31, 0.2);
     color: #8d6b00;
+}
+
+.assignment-accuracy {
+    padding: 3px 8px;
+    border-radius: 6px;
+    background: rgba(4, 140, 79, 0.12);
+    color: #0b6b3f;
+    font-weight: 600;
+}
+
+.assignment-accuracy.is-low {
+    background: rgba(205, 47, 47, 0.14);
+    color: #a52323;
+}
+
+.assignment-warning {
+    color: #a52323;
+    font-weight: 600;
 }
 
 .preview-footer {
@@ -723,6 +876,10 @@ button:disabled {
     .preview-footer {
         padding-left: 20px;
         padding-right: 20px;
+    }
+
+    .assignment-edit-grid {
+        grid-template-columns: 1fr;
     }
 }
 

@@ -22,14 +22,22 @@ const error = document.getElementById('error');
 const success = document.getElementById('success');
 const courseName = document.getElementById('courseName');
 const discordOptIn = document.getElementById('discordOptIn');
-const discordHandle = document.getElementById('discordHandle');
-const termEnd = document.getElementById('termEnd');
+const discordConnect = document.getElementById('discordConnect');
+const discordConnected = document.getElementById('discordConnected');
+const discordConnectedName = document.getElementById('discordConnectedName');
+const discordAvatarImg = document.getElementById('discordAvatarImg');
 const discordMatches = document.getElementById('discordMatches');
 const discordMatchesBody = document.getElementById('discordMatchesBody');
 const discordMatchesEmpty = document.getElementById('discordMatchesEmpty');
 const calendarViewInline = document.getElementById('calendarViewInline');
 const calendarViewBody = document.getElementById('calendarViewBody');
 const calendarNameDisplay = document.getElementById('calendarNameDisplay');
+
+if (window.location.hostname === '127.0.0.1') {
+    const canonicalUrl = new URL(window.location.href);
+    canonicalUrl.hostname = 'localhost';
+    window.location.replace(canonicalUrl.toString());
+}
 
 let selectedFiles = [];
 let extractedAssignments = [];
@@ -41,6 +49,9 @@ let currentStudyPlanCourse = ''; // Track currently viewed study plan course
 const ALL_COURSES_VALUE = '__all__';
 let discordMatchesBySource = {}; // Map of filename -> array of handles
 let currentCourseNameForCalendar = ''; // Store course name for Google Calendar upload
+let discordAvatarUrl = '';
+let discordHandleValue = ''; // Set by Discord OAuth only
+const LOW_ACCURACY_THRESHOLD = 80;
 
 // Click to browse
 dropzone.addEventListener('click', () => fileInput.click());
@@ -89,15 +100,22 @@ function normalizeDiscordHandle(handle) {
     return handle.trim().replace(/^@/, '').trim();
 }
 
-function getTermEndValue() {
-    return termEnd && termEnd.value ? termEnd.value : '';
-}
-
-function setDefaultTermEnd() {
-    if (!termEnd || termEnd.value) return;
-    const now = new Date();
-    const year = now.getFullYear();
-    termEnd.value = `${year}-12-31`;
+function showDiscordConnected(handle, avatarUrl) {
+    if (!discordConnected || !discordConnectedName || !discordAvatarImg) return;
+    if (!handle) {
+        discordConnected.style.display = 'none';
+        discordConnect.style.display = '';
+        return;
+    }
+    discordConnectedName.textContent = handle;
+    if (avatarUrl) {
+        discordAvatarImg.src = avatarUrl;
+        discordAvatarImg.style.display = '';
+    } else {
+        discordAvatarImg.style.display = 'none';
+    }
+    discordConnected.style.display = 'flex';
+    discordConnect.style.display = 'none';
 }
 
 function setOptInFieldsEnabled(isEnabled) {
@@ -120,11 +138,21 @@ function renderDiscordMatches() {
             return `
                 <div class="discord-course-block">
                     <div class="discord-course-title">${safeSource}</div>
-                    <div class="discord-match-empty">No matches yet.</div>
+                    <div class="discord-match-empty">No classmates have opted in yet.</div>
                 </div>
             `;
         }
-        const pills = handles.map(handle => `<span class="discord-handle">${escapeHtml(handle)}</span>`).join('');
+        const pills = handles.map((entry) => {
+            const handle = entry.handle || '';
+            const avatarUrl = entry.avatar_url || '';
+            const isYou = entry.is_you || false;
+            const defaultAvatar = `<span class="discord-avatar-placeholder">&#128100;</span>`;
+            const avatarImg = avatarUrl
+                ? `<img src="${escapeHtml(avatarUrl)}" alt="" onerror="this.outerHTML='<span class=\'discord-avatar-placeholder\'>&#128100;</span>'">`
+                : defaultAvatar;
+            const youBadge = isYou ? ' <span class="discord-you-badge">(you)</span>' : '';
+            return `<span class="discord-handle${isYou ? ' discord-handle-you' : ''}">${avatarImg}${escapeHtml(handle)}${youBadge}</span>`;
+        }).join('');
         return `
             <div class="discord-course-block">
                 <div class="discord-course-title">${safeSource}</div>
@@ -140,8 +168,61 @@ discordOptIn.addEventListener('change', (e) => {
     setOptInFieldsEnabled(e.target.checked);
 });
 
-setDefaultTermEnd();
 setOptInFieldsEnabled(discordOptIn.checked);
+showDiscordConnected(discordHandleValue, discordAvatarUrl);
+
+// Clear any stale auth data on load
+try { localStorage.removeItem('discord-auth'); } catch (e) {}
+
+let _discordAuthPollTimer = null;
+
+if (discordConnect) {
+    discordConnect.addEventListener('click', () => {
+        // Clear old data before opening popup
+        try { localStorage.removeItem('discord-auth'); } catch (e) {}
+        const popup = window.open('/discord/oauth/start', 'discordAuth', 'width=500,height=700');
+
+        // Poll localStorage until auth data arrives or popup closes
+        if (_discordAuthPollTimer) clearInterval(_discordAuthPollTimer);
+        _discordAuthPollTimer = setInterval(() => {
+            try {
+                const raw = localStorage.getItem('discord-auth');
+                if (raw) {
+                    const data = JSON.parse(raw);
+                    applyDiscordAuth(data);
+                    localStorage.removeItem('discord-auth');
+                    clearInterval(_discordAuthPollTimer);
+                    _discordAuthPollTimer = null;
+                    return;
+                }
+            } catch (e) {}
+            // Stop polling if popup was closed without auth
+            if (popup && popup.closed) {
+                clearInterval(_discordAuthPollTimer);
+                _discordAuthPollTimer = null;
+            }
+        }, 500);
+    });
+}
+
+function applyDiscordAuth(data) {
+    if (!data || data.type !== 'discord-auth') return;
+    const handle = data.handle || '';
+    const avatarUrl = data.avatar_url || '';
+    if (handle) {
+        discordHandleValue = handle;
+        discordAvatarUrl = avatarUrl;
+        discordOptIn.checked = true;
+        setOptInFieldsEnabled(true);
+        showDiscordConnected(handle, avatarUrl);
+    }
+}
+
+// Listen for postMessage from popup (works when window.opener survives)
+window.addEventListener('message', (event) => {
+    if (event.origin !== window.location.origin) return;
+    applyDiscordAuth(event.data);
+});
 
 function updateFileList() {
     if (selectedFiles.length === 0) {
@@ -209,9 +290,8 @@ uploadForm.addEventListener('submit', async (e) => {
     if (selectedFiles.length === 0) return;
 
     if (discordOptIn.checked) {
-        const handle = normalizeDiscordHandle(discordHandle.value);
-        if (!handle) {
-            showError('Please enter your Discord handle to opt in');
+        if (!discordHandleValue) {
+            showError('Please connect your Discord account first');
             return;
         }
     }
@@ -263,18 +343,22 @@ uploadForm.addEventListener('submit', async (e) => {
                 Object.assign(studyPlansByCourseName, cachedStudyPlans);
             }
 
-            if (discordOptIn.checked && fileHash) {
-                const handle = normalizeDiscordHandle(discordHandle.value);
+            if (discordOptIn.checked && fileHash && discordHandleValue) {
+                const handle = normalizeDiscordHandle(discordHandleValue);
                 try {
-                    await fetch('/share_discord', {
+                    const shareResponse = await fetch('/share_discord', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             file_hash: fileHash,
                             discord_handle: handle,
-                            term_end: getTermEndValue()
+                            avatar_url: discordAvatarUrl
                         })
                     });
+
+                    if (!shareResponse.ok) {
+                        console.error('share_discord failed:', await shareResponse.text());
+                    }
 
                     const matchesResponse = await fetch('/shared_discords', {
                         method: 'POST',
@@ -345,18 +429,48 @@ function renderPreview() {
                     <span class="file-group-count">${assignments.length} assignment${assignments.length !== 1 ? 's' : ''}</span>
                 </div>
                 <div class="file-group-items">
-                    ${assignments.map(assignment => `
-                        <div class="assignment-item" data-index="${assignment.originalIndex}">
+                    ${assignments.map(assignment => {
+                        const accuracy = Number(assignment.accuracy ?? 100);
+                        const isLowAccuracy = assignment.is_low_accuracy === true || accuracy < LOW_ACCURACY_THRESHOLD;
+                        const title = assignment.title || '';
+                        const dueDate = assignment.due_date || '';
+                        const assignmentType = assignment.type || 'assignment';
+                        return `
+                        <div class="assignment-item${isLowAccuracy ? ' low-accuracy' : ''}" data-index="${assignment.originalIndex}">
                             <input type="checkbox" class="assignment-checkbox" id="assignment-${assignment.originalIndex}" checked>
                             <div class="assignment-info">
-                                <label for="assignment-${assignment.originalIndex}" class="assignment-title">${escapeHtml(assignment.title || 'Untitled')}</label>
+                                <div class="assignment-edit-grid">
+                                    <div class="assignment-field">
+                                        <label for="assignment-title-${assignment.originalIndex}" class="assignment-field-label">Title</label>
+                                        <input id="assignment-title-${assignment.originalIndex}" class="assignment-input assignment-title-input" type="text" value="${escapeHtml(title)}" placeholder="Untitled assignment">
+                                    </div>
+                                    <div class="assignment-field">
+                                        <label for="assignment-date-${assignment.originalIndex}" class="assignment-field-label">Due Date</label>
+                                        <input id="assignment-date-${assignment.originalIndex}" class="assignment-input assignment-date-input" type="date" value="${escapeHtml(dueDate)}">
+                                    </div>
+                                    <div class="assignment-field">
+                                        <label for="assignment-type-${assignment.originalIndex}" class="assignment-field-label">Type</label>
+                                        <select id="assignment-type-${assignment.originalIndex}" class="assignment-input assignment-type-input">
+                                            <option value="assignment" ${assignmentType === 'assignment' ? 'selected' : ''}>assignment</option>
+                                            <option value="test" ${assignmentType === 'test' ? 'selected' : ''}>test</option>
+                                            <option value="quiz" ${assignmentType === 'quiz' ? 'selected' : ''}>quiz</option>
+                                            <option value="exam" ${assignmentType === 'exam' ? 'selected' : ''}>exam</option>
+                                            <option value="project" ${assignmentType === 'project' ? 'selected' : ''}>project</option>
+                                            <option value="presentation" ${assignmentType === 'presentation' ? 'selected' : ''}>presentation</option>
+                                            <option value="other" ${assignmentType === 'other' ? 'selected' : ''}>other</option>
+                                        </select>
+                                    </div>
+                                </div>
                                 <div class="assignment-meta">
-                                    <span class="assignment-date">📅 ${assignment.due_date || 'No date'}</span>
-                                    <span class="assignment-type">${assignment.type || 'assignment'}</span>
+                                    <span class="assignment-accuracy ${isLowAccuracy ? 'is-low' : ''}">
+                                        Accuracy: ${Number.isFinite(accuracy) ? accuracy.toFixed(1) : '100.0'}%
+                                    </span>
+                                    ${isLowAccuracy ? '<span class="assignment-warning">Low confidence entry</span>' : ''}
                                 </div>
                             </div>
                         </div>
-                    `).join('')}
+                    `;
+                    }).join('')}
                 </div>
             </div>
         `;
@@ -373,6 +487,32 @@ function renderPreview() {
     });
 }
 
+function getAssignmentsFromPreview({ onlyChecked = false } = {}) {
+    return extractedAssignments
+        .map((assignment, index) => {
+            const checkbox = document.getElementById(`assignment-${index}`);
+            if (onlyChecked && (!checkbox || !checkbox.checked)) {
+                return null;
+            }
+
+            const titleInput = document.getElementById(`assignment-title-${index}`);
+            const dateInput = document.getElementById(`assignment-date-${index}`);
+            const typeInput = document.getElementById(`assignment-type-${index}`);
+            const accuracy = Number(assignment.accuracy ?? 100);
+            const isLowAccuracy = assignment.is_low_accuracy === true || accuracy < LOW_ACCURACY_THRESHOLD;
+
+            return {
+                ...assignment,
+                title: (titleInput && titleInput.value ? titleInput.value : assignment.title || 'Untitled').trim(),
+                due_date: dateInput && dateInput.value ? dateInput.value : null,
+                type: typeInput && typeInput.value ? typeInput.value : (assignment.type || 'assignment'),
+                accuracy: Number.isFinite(accuracy) ? accuracy : 100,
+                is_low_accuracy: isLowAccuracy
+            };
+        })
+        .filter(Boolean);
+}
+
 // Cancel preview
 cancelPreview.addEventListener('click', () => {
     hidePreview();
@@ -382,7 +522,11 @@ cancelPreview.addEventListener('click', () => {
 // Skip study plan
 skipStudyPlan.addEventListener('click', () => {
     hideSuccessModal();
+    // Preserve discord matches across skip
+    const savedMatches = { ...discordMatchesBySource };
     resetForm();
+    discordMatchesBySource = savedMatches;
+    renderDiscordMatches();
 });
 
 // Upload to Google Calendar
@@ -695,7 +839,8 @@ generateStudyPlan.addEventListener('click', async () => {
             
             const requestPayload = {
                 data: assignments,
-                file_hash: fileHash
+                file_hash: fileHash,
+                allow_cache: false
             };
             
             const response = await fetch(`/generate_study_plan?course_name=${encodeURIComponent(courseName)}`, {
@@ -765,8 +910,9 @@ function resetForm() {
     submitBtn.disabled = true;
     fileInput.value = '';
     discordOptIn.checked = false;
-    discordHandle.value = '';
-    setDefaultTermEnd();
+    discordHandleValue = '';
+    discordAvatarUrl = '';
+    showDiscordConnected('', '');
     setOptInFieldsEnabled(false);
     discordMatches.style.display = 'none';
     discordMatchesBody.innerHTML = '';
@@ -786,10 +932,7 @@ confirmGenerate.addEventListener('click', async () => {
 
     try {
         // Filter to only checked assignments
-        const checkedAssignments = extractedAssignments.filter((_, index) => {
-            const checkbox = document.getElementById(`assignment-${index}`);
-            return checkbox && checkbox.checked;
-        });
+        const checkedAssignments = getAssignmentsFromPreview({ onlyChecked: true });
 
         if (checkedAssignments.length === 0) {
             showError('Please select at least one assignment');

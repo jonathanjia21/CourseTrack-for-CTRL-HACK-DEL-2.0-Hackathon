@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 DB_PASSWORD=os.getenv("DB_PASSWORD")
+TTL_SECONDS = 60 * 60 * 24 * 150
 
 uri = f"mongodb+srv://ct_dev_app:{DB_PASSWORD}@coursetracker-main.zyd7ln1.mongodb.net/?appName=coursetracker-main"
 
@@ -18,6 +19,7 @@ try:
     print("Pinged your deployment. You successfully connected to MongoDB!")
     db = client["courses"]
     course_collection = db["course_info"]
+    course_collection.create_index("created_at", expireAfterSeconds=TTL_SECONDS)
     print("MongoDB connected successfully.")
 except Exception as e:
     print(f"MongoDB connection failed: {e}")
