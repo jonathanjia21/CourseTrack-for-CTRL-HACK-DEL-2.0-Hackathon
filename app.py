@@ -184,6 +184,90 @@ Text:
 
 
 # ----------------------------
+# Study Plan Generation
+# ----------------------------
+def call_openrouter_to_generate_study_plan(assignments: list, course_name: str) -> dict:
+    """Generate a personalized study plan based on assignments."""
+    
+    # Format assignments into readable text
+    assignments_text = "\n".join([
+        f"- {a.get('title', 'Untitled')} ({a.get('type', 'assignment')}): Due {a.get('due_date', 'TBD')}"
+        for a in assignments
+    ])
+
+    prompt_system = """
+You are a helpful academic advisor creating personalized study plans.
+
+CRITICAL REQUIREMENTS:
+- Output MUST be a raw JSON object (not wrapped in markdown or code blocks).
+- Do NOT include explanation text before or after JSON.
+- Do NOT include code fences.
+
+Required format:
+
+{
+  "overview": string (brief description of the course study approach),
+  "weekly_schedule": [string, string, ...] (array of 4-8 weekly recommendations),
+  "study_tips": [string, string, ...] (array of 5-8 practical tips),
+  "resource_recommendations": string (recommended resources and tools)
+}
+
+Be practical and specific. Base recommendations on the actual assignments provided.
+"""
+
+    prompt_user = f"""
+Create a personalized study plan for {course_name} based on these assignments:
+
+{assignments_text}
+
+Generate practical, actionable guidance that helps the student succeed in this course.
+"""
+
+    try:
+        response = requests.post(
+            OPENROUTER_URL,
+            headers={
+                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                "Content-Type": "application/json",
+                "HTTP-Referer": "http://localhost",
+                "X-Title": "Study Plan Generator"
+            },
+            json={
+                "model": OPENROUTER_MODEL,
+                "messages": [
+                    {"role": "system", "content": prompt_system.strip()},
+                    {"role": "user", "content": prompt_user.strip()}
+                ],
+                "temperature": 0.7,
+                "max_tokens": 2000
+            },
+            timeout=60
+        )
+
+        response.raise_for_status()
+        data = response.json()
+        content = data["choices"][0]["message"]["content"]
+
+    except Exception as e:
+        raise RuntimeError(f"OpenRouter request failed: {e}")
+
+    # Parse JSON from response
+    try:
+        return json.loads(content)
+    except Exception:
+        # Try to extract JSON object from markdown or other wrapper
+        start = content.find("{")
+        end = content.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            snippet = content[start:end + 1]
+            try:
+                return json.loads(snippet)
+            except Exception as e:
+                raise RuntimeError(f"Failed to parse JSON from model output: {e}\nOutput was:\n{content}")
+        raise RuntimeError(f"Model did not return valid JSON.\nOutput:\n{content}")
+
+
+# ----------------------------
 # Routes
 # ----------------------------
 @app.route("/", methods=["GET"])
@@ -325,6 +409,42 @@ def pdf_to_ics_endpoint():
         as_attachment=True,
         download_name=f"{course_name}.ics"
     )
+
+
+@app.route("/generate_study_plan", methods=["POST"])
+def generate_study_plan_endpoint():
+    data = request.get_json()
+    if not isinstance(data, list):
+        return jsonify({"error": "expected JSON array"}), 400
+
+    course_name = request.args.get("course_name", "Course Assignments")
+
+    try:
+        if USE_LOCAL_FALLBACK:
+            # Simple fallback: return a basic study plan structure
+            study_plan = {
+                "overview": f"Study plan for {course_name}",
+                "weekly_schedule": [
+                    "Review syllabus and course materials",
+                    "Complete assigned readings",
+                    "Work on assignments and projects",
+                    "Prepare for exams and quizzes"
+                ],
+                "study_tips": [
+                    "Start assignments early to avoid last-minute rush",
+                    "Form a study group with classmates",
+                    "Review notes regularly, not just before the exam",
+                    "Attend office hours if you need clarification",
+                    "Take care of your physical and mental health"
+                ],
+                "resource_recommendations": "Take advantage of tutoring services, online resources, and library materials available at your institution."
+            }
+        else:
+            study_plan = call_openrouter_to_generate_study_plan(data, course_name)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    return jsonify(study_plan)
 
 
 if __name__ == "__main__":

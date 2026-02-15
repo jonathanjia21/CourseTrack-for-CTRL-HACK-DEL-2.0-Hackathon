@@ -44,6 +44,10 @@
                     Generate Calendar
                 </button>
 
+                <button type="button" id="viewStudyPlanBtn" class="btn-secondary" style="display: none;">
+                    View Study Plan
+                </button>
+
                 <div class="error" id="error"></div>
                 <div class="success" id="success"></div>
             </form>
@@ -73,6 +77,36 @@
             <div class="preview-footer">
                 <button type="button" class="btn-secondary" id="cancelPreview">Cancel</button>
                 <button type="button" class="btn-primary" id="confirmGenerate">Generate Calendar</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="success-modal" id="successModal" aria-hidden="true">
+        <div class="success-content">
+            <div class="success-header">
+                <div class="success-icon">✓</div>
+                <h2>Calendar Generated!</h2>
+                <p class="success-subtitle">Your calendar file is ready to download</p>
+            </div>
+            <div class="success-body">
+                <p>Would you like to generate a personalized study plan for your course?</p>
+            </div>
+            <div class="success-footer">
+                <button type="button" class="btn-secondary" id="skipStudyPlan">Skip</button>
+                <button type="button" class="btn-primary" id="generateStudyPlan">Generate Study Plan</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="study-plan-modal" id="studyPlanModal" aria-hidden="true">
+        <div class="study-plan-content">
+            <div class="study-plan-header">
+                <h2>Study Plan</h2>
+                <p class="study-plan-subtitle" id="studyPlanCourseName">Your personalized study plan</p>
+            </div>
+            <div class="study-plan-body" id="studyPlanBody"></div>
+            <div class="study-plan-footer">
+                <button type="button" class="btn-primary" id="closeStudyPlan">Done</button>
             </div>
         </div>
     </div>

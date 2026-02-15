@@ -9,12 +9,23 @@ const previewModal = document.getElementById('previewModal');
 const previewBody = document.getElementById('previewBody');
 const cancelPreview = document.getElementById('cancelPreview');
 const confirmGenerate = document.getElementById('confirmGenerate');
+const successModal = document.getElementById('successModal');
+const skipStudyPlan = document.getElementById('skipStudyPlan');
+const generateStudyPlan = document.getElementById('generateStudyPlan');
+const studyPlanModal = document.getElementById('studyPlanModal');
+const studyPlanBody = document.getElementById('studyPlanBody');
+const studyPlanCourseName = document.getElementById('studyPlanCourseName');
+const closeStudyPlan = document.getElementById('closeStudyPlan');
+const viewStudyPlanBtn = document.getElementById('viewStudyPlanBtn');
 const error = document.getElementById('error');
 const success = document.getElementById('success');
 const courseName = document.getElementById('courseName');
 
 let selectedFiles = [];
 let extractedAssignments = [];
+let currentCheckedAssignments = [];
+let currentStudyPlan = null;
+let currentCourseName = '';
 
 // Click to browse
 dropzone.addEventListener('click', () => fileInput.click());
@@ -106,6 +117,26 @@ function showPreview() {
 function hidePreview() {
     previewModal.classList.remove('active');
     previewModal.setAttribute('aria-hidden', 'true');
+}
+
+function showSuccessModal() {
+    successModal.classList.add('active');
+    successModal.setAttribute('aria-hidden', 'false');
+}
+
+function hideSuccessModal() {
+    successModal.classList.remove('active');
+    successModal.setAttribute('aria-hidden', 'true');
+}
+
+function showStudyPlanModal() {
+    studyPlanModal.classList.add('active');
+    studyPlanModal.setAttribute('aria-hidden', 'false');
+}
+
+function hideStudyPlanModal() {
+    studyPlanModal.classList.remove('active');
+    studyPlanModal.setAttribute('aria-hidden', 'true');
 }
 
 // Form submission - Extract assignments and show preview
@@ -230,6 +261,133 @@ cancelPreview.addEventListener('click', () => {
     submitBtn.disabled = false;
 });
 
+// Skip study plan
+skipStudyPlan.addEventListener('click', () => {
+    hideSuccessModal();
+    resetForm();
+});
+
+// Close study plan modal (without resetting form)
+closeStudyPlan.addEventListener('click', () => {
+    hideStudyPlanModal();
+});
+
+// View study plan button
+viewStudyPlanBtn.addEventListener('click', () => {
+    if (currentStudyPlan) {
+        showStudyPlanModal();
+    }
+});
+
+// Generate study plan
+generateStudyPlan.addEventListener('click', async () => {
+    hideSuccessModal();
+    setLoading(true, 'Generating your personalized study plan...');
+
+    try {
+        if (currentCheckedAssignments.length === 0) {
+            showError('No assignments available for study plan');
+            setLoading(false);
+            return;
+        }
+
+        const course = courseName.value.trim() || 'Course Assignments';
+        const response = await fetch(`/generate_study_plan?course_name=${encodeURIComponent(course)}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(currentCheckedAssignments)
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(errorText || 'Failed to generate study plan');
+        }
+
+        const studyPlan = await response.json();
+        
+        // Store study plan for later viewing
+        currentStudyPlan = studyPlan;
+        currentCourseName = course;
+        
+        // Update course name in study plan modal
+        studyPlanCourseName.textContent = `${course} Study Plan`;
+        
+        // Render study plan
+        renderStudyPlan(studyPlan);
+        showStudyPlanModal();
+        
+        // Show the view study plan button
+        viewStudyPlanBtn.style.display = 'block';
+
+    } catch (err) {
+        console.error(err);
+        showError(err.message || 'Failed to generate study plan');
+        showSuccessModal();
+    } finally {
+        setLoading(false);
+    }
+});
+
+function resetForm() {
+    selectedFiles = [];
+    extractedAssignments = [];
+    currentCheckedAssignments = [];
+    currentStudyPlan = null;
+    currentCourseName = '';
+    fileList.innerHTML = '';
+    submitBtn.disabled = true;
+    fileInput.value = '';
+    viewStudyPlanBtn.style.display = 'none';
+}
+
+function renderStudyPlan(studyPlan) {
+    let html = '<div class="study-plan-content-inner">';
+    
+    if (studyPlan.overview) {
+        html += `
+            <div class="study-plan-section">
+                <h3>Overview</h3>
+                <p>${escapeHtml(studyPlan.overview)}</p>
+            </div>
+        `;
+    }
+
+    if (studyPlan.weekly_schedule && Array.isArray(studyPlan.weekly_schedule)) {
+        html += '<div class="study-plan-section"><h3>Weekly Schedule</h3>';
+        studyPlan.weekly_schedule.forEach((week, index) => {
+            html += `
+                <div class="study-plan-week">
+                    <h4>Week ${index + 1}</h4>
+                    <p>${escapeHtml(week)}</p>
+                </div>
+            `;
+        });
+        html += '</div>';
+    }
+
+    if (studyPlan.study_tips && Array.isArray(studyPlan.study_tips)) {
+        html += '<div class="study-plan-section"><h3>Study Tips</h3><ul>';
+        studyPlan.study_tips.forEach((tip) => {
+            html += `<li>${escapeHtml(tip)}</li>`;
+        });
+        html += '</ul></div>';
+    }
+
+    if (studyPlan.resource_recommendations) {
+        html += `
+            <div class="study-plan-section">
+                <h3>Resource Recommendations</h3>
+                <p>${escapeHtml(studyPlan.resource_recommendations)}</p>
+            </div>
+        `;
+    }
+
+    html += '</div>';
+    studyPlanBody.innerHTML = html;
+}
+
 // Generate calendar from selected assignments
 confirmGenerate.addEventListener('click', async () => {
     hidePreview();
@@ -283,14 +441,13 @@ confirmGenerate.addEventListener('click', async () => {
         window.URL.revokeObjectURL(url);
         document.body.removeChild(a);
 
-        showSuccess(`Calendar generated with ${checkedAssignments.length} assignment(s)!`);
-        
-        // Reset form
-        selectedFiles = [];
-        extractedAssignments = [];
-        fileList.innerHTML = '';
-        submitBtn.disabled = true;
-        fileInput.value = '';
+        // Store checked assignments for study plan generation
+        currentCheckedAssignments = checkedAssignments;
+
+        // Show success modal with study plan option
+        hidePreview();
+        setLoading(false);
+        showSuccessModal();
 
     } catch (err) {
         console.error(err);
