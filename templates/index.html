@@ -44,9 +44,12 @@
                     Generate Calendar
                 </button>
 
-                <button type="button" id="viewStudyPlanBtn" class="btn-secondary" style="display: none;">
-                    View Study Plan
-                </button>
+                <div class="study-plan-selector" id="studyPlanSelector" style="display: none;">
+                    <label for="studyPlanDropdown">View Study Plan:</label>
+                    <select id="studyPlanDropdown">
+                        <option value="">-- Select a course --</option>
+                    </select>
+                </div>
 
                 <div class="error" id="error"></div>
                 <div class="success" id="success"></div>

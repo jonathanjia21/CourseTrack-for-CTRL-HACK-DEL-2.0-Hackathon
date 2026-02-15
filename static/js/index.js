@@ -16,7 +16,8 @@ const studyPlanModal = document.getElementById('studyPlanModal');
 const studyPlanBody = document.getElementById('studyPlanBody');
 const studyPlanCourseName = document.getElementById('studyPlanCourseName');
 const closeStudyPlan = document.getElementById('closeStudyPlan');
-const viewStudyPlanBtn = document.getElementById('viewStudyPlanBtn');
+const studyPlanSelector = document.getElementById('studyPlanSelector');
+const studyPlanDropdown = document.getElementById('studyPlanDropdown');
 const error = document.getElementById('error');
 const success = document.getElementById('success');
 const courseName = document.getElementById('courseName');
@@ -24,8 +25,9 @@ const courseName = document.getElementById('courseName');
 let selectedFiles = [];
 let extractedAssignments = [];
 let currentCheckedAssignments = [];
-let currentStudyPlan = null;
-let currentCourseName = '';
+let studyPlansByCourseName = {}; // Map of courseName -> studyPlan
+let courseAssignmentsByName = {}; // Map of courseName -> assignments
+let fileHashesByCourseName = {}; // Map of courseName -> file_hash (for caching)
 
 // Click to browse
 dropzone.addEventListener('click', () => fileInput.click());
@@ -170,13 +172,25 @@ uploadForm.addEventListener('submit', async (e) => {
                 throw new Error(`Failed to process ${file.name}: ${errorText}`);
             }
 
-            const assignments = await response.json();
-            // Tag each assignment with its source file
+            const responseData = await response.json();
+            
+            // Handle both new format (with file_hash) and old format (just array)
+            let assignments = Array.isArray(responseData) ? responseData : responseData.assignments || [];
+            const fileHash = responseData.file_hash || null;
+            const cachedStudyPlans = responseData.study_plans || {};
+            
+            // Tag each assignment with its source file and file hash
             const taggedAssignments = assignments.map(a => ({
                 ...a,
-                source: file.name
+                source: file.name,
+                file_hash: fileHash
             }));
             extractedAssignments = [...extractedAssignments, ...taggedAssignments];
+            
+            // Store cached study plans if available
+            if (cachedStudyPlans && Object.keys(cachedStudyPlans).length > 0) {
+                Object.assign(studyPlansByCourseName, cachedStudyPlans);
+            }
         }
 
         setLoading(false);
@@ -272,9 +286,12 @@ closeStudyPlan.addEventListener('click', () => {
     hideStudyPlanModal();
 });
 
-// View study plan button
-viewStudyPlanBtn.addEventListener('click', () => {
-    if (currentStudyPlan) {
+// Study plan dropdown selector
+studyPlanDropdown.addEventListener('change', (e) => {
+    const selectedCourseName = e.target.value;
+    if (selectedCourseName && studyPlansByCourseName[selectedCourseName]) {
+        studyPlanCourseName.textContent = `${selectedCourseName} Study Plan`;
+        renderStudyPlan(studyPlansByCourseName[selectedCourseName]);
         showStudyPlanModal();
     }
 });
@@ -282,7 +299,7 @@ viewStudyPlanBtn.addEventListener('click', () => {
 // Generate study plan
 generateStudyPlan.addEventListener('click', async () => {
     hideSuccessModal();
-    setLoading(true, 'Generating your personalized study plan...');
+    setLoading(true, 'Generating personalized study plans for each course...');
 
     try {
         if (currentCheckedAssignments.length === 0) {
@@ -291,55 +308,111 @@ generateStudyPlan.addEventListener('click', async () => {
             return;
         }
 
-        const course = courseName.value.trim() || 'Course Assignments';
-        const response = await fetch(`/generate_study_plan?course_name=${encodeURIComponent(course)}`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(currentCheckedAssignments)
+        // Group assignments by course
+        const assignmentsByCourseName = {};
+        const hashByCourseName = {}; // Track the primary file hash for each course
+        
+        currentCheckedAssignments.forEach(assignment => {
+            const courseCode = extractCourseCode(assignment.source) || 'General';
+            if (!assignmentsByCourseName[courseCode]) {
+                assignmentsByCourseName[courseCode] = [];
+                hashByCourseName[courseCode] = assignment.file_hash || null;
+            }
+            assignmentsByCourseName[courseCode].push(assignment);
         });
 
-        if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(errorText || 'Failed to generate study plan');
+        // Clear previous study plans (but keep already cached ones from response)
+        // Don't clear studyPlansByCourseName - preserve cached plans from DB
+        courseAssignmentsByName = {};
+        fileHashesByCourseName = {};
+        
+        // Generate a study plan for each course
+        const courseNames = Object.keys(assignmentsByCourseName);
+        for (let i = 0; i < courseNames.length; i++) {
+            const courseName = courseNames[i];
+            const assignments = assignmentsByCourseName[courseName];
+            const fileHash = hashByCourseName[courseName];
+            
+            setLoading(true, `Generating study plan for ${courseName} (${i + 1} of ${courseNames.length})...`);
+            
+            // Check if this study plan is already cached
+            if (studyPlansByCourseName[courseName]) {
+                console.log(`Using cached study plan for ${courseName}`);
+                continue;
+            }
+            
+            const requestPayload = {
+                data: assignments,
+                file_hash: fileHash
+            };
+            
+            const response = await fetch(`/generate_study_plan?course_name=${encodeURIComponent(courseName)}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(requestPayload)
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`Failed to generate study plan for ${courseName}: ${errorText}`);
+            }
+
+            const studyPlan = await response.json();
+            studyPlansByCourseName[courseName] = studyPlan;
+            courseAssignmentsByName[courseName] = assignments;
+            fileHashesByCourseName[courseName] = fileHash;
         }
 
-        const studyPlan = await response.json();
+        // Populate dropdown with course names
+        populateStudyPlanDropdown(courseNames);
         
-        // Store study plan for later viewing
-        currentStudyPlan = studyPlan;
-        currentCourseName = course;
+        // Show the study plan selector
+        studyPlanSelector.style.display = 'block';
         
-        // Update course name in study plan modal
-        studyPlanCourseName.textContent = `${course} Study Plan`;
-        
-        // Render study plan
-        renderStudyPlan(studyPlan);
-        showStudyPlanModal();
-        
-        // Show the view study plan button
-        viewStudyPlanBtn.style.display = 'block';
+        // Show the first study plan
+        if (courseNames.length > 0) {
+            studyPlanDropdown.value = courseNames[0];
+            studyPlanCourseName.textContent = `${courseNames[0]} Study Plan`;
+            renderStudyPlan(studyPlansByCourseName[courseNames[0]]);
+            showStudyPlanModal();
+        }
 
     } catch (err) {
         console.error(err);
-        showError(err.message || 'Failed to generate study plan');
+        showError(err.message || 'Failed to generate study plans');
         showSuccessModal();
     } finally {
         setLoading(false);
     }
 });
 
+function populateStudyPlanDropdown(courseNames) {
+    // Keep the first option placeholder
+    const options = ['<option value="">-- Select a course --</option>'];
+    
+    courseNames.forEach(courseName => {
+        options.push(`<option value="${escapeHtml(courseName)}">${escapeHtml(courseName)}</option>`);
+    });
+    
+    // Rebuild the dropdown while preserving the first option
+    const innerHTML = options.join('');
+    studyPlanDropdown.innerHTML = innerHTML;
+}
+
 function resetForm() {
     selectedFiles = [];
     extractedAssignments = [];
     currentCheckedAssignments = [];
-    currentStudyPlan = null;
-    currentCourseName = '';
+    studyPlansByCourseName = {};
+    courseAssignmentsByName = {};
+    fileHashesByCourseName = {};
     fileList.innerHTML = '';
     submitBtn.disabled = true;
     fileInput.value = '';
-    viewStudyPlanBtn.style.display = 'none';
+    studyPlanSelector.style.display = 'none';
+    populateStudyPlanDropdown([]);
 }
 
 function renderStudyPlan(studyPlan) {

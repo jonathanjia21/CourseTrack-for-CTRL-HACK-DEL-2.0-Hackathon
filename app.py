@@ -293,7 +293,11 @@ def extract_assignments():
             cached = course_collection.find_one({"_id": file_hash})
             if cached and "assignments" in cached:
                 print(f"Cache hit for {filename} (hash: {file_hash[:8]}...)")
-                return jsonify(cached["assignments"])
+                return jsonify({
+                    "assignments": cached["assignments"],
+                    "file_hash": file_hash,
+                    "study_plans": cached.get("study_plans", {})
+                })
         except Exception as e:
             print(f"Cache lookup failed: {e}")
     
@@ -314,7 +318,8 @@ def extract_assignments():
             course_collection.insert_one({
                 "_id": file_hash,
                 "filename": filename,
-                "assignments": items
+                "assignments": items,
+                "study_plans": {}
             })
             print(f"Cached assignments for {filename} (hash: {file_hash[:8]}...)")
         except DuplicateKeyError:
@@ -322,7 +327,11 @@ def extract_assignments():
         except Exception as e:
             print(f"Cache save failed: {e}")
 
-    return jsonify(items)
+    return jsonify({
+        "assignments": items,
+        "file_hash": file_hash,
+        "study_plans": {}
+    })
 
 
 @app.route("/json_to_ics", methods=["POST"])
@@ -413,34 +422,67 @@ def pdf_to_ics_endpoint():
 
 @app.route("/generate_study_plan", methods=["POST"])
 def generate_study_plan_endpoint():
-    data = request.get_json()
-    if not isinstance(data, list):
-        return jsonify({"error": "expected JSON array"}), 400
+    payload = request.get_json()
+    
+    # Handle both old format (array) and new format (dict with data and file_hash)
+    if isinstance(payload, list):
+        data = payload
+        file_hash = None
+    elif isinstance(payload, dict) and "data" in payload:
+        data = payload["data"]
+        file_hash = payload.get("file_hash")
+    else:
+        return jsonify({"error": "expected JSON array or object with 'data' key"}), 400
 
     course_name = request.args.get("course_name", "Course Assignments")
 
     try:
-        if USE_LOCAL_FALLBACK:
-            # Simple fallback: return a basic study plan structure
-            study_plan = {
-                "overview": f"Study plan for {course_name}",
-                "weekly_schedule": [
-                    "Review syllabus and course materials",
-                    "Complete assigned readings",
-                    "Work on assignments and projects",
-                    "Prepare for exams and quizzes"
-                ],
-                "study_tips": [
-                    "Start assignments early to avoid last-minute rush",
-                    "Form a study group with classmates",
-                    "Review notes regularly, not just before the exam",
-                    "Attend office hours if you need clarification",
-                    "Take care of your physical and mental health"
-                ],
-                "resource_recommendations": "Take advantage of tutoring services, online resources, and library materials available at your institution."
-            }
-        else:
-            study_plan = call_openrouter_to_generate_study_plan(data, course_name)
+        # Check cache first if file_hash is provided
+        study_plan = None
+        if file_hash and course_collection is not None:
+            try:
+                cached = course_collection.find_one({"_id": file_hash})
+                if cached and "study_plans" in cached and course_name in cached["study_plans"]:
+                    print(f"Cache hit for study plan: {course_name} (hash: {file_hash[:8]}...)")
+                    study_plan = cached["study_plans"][course_name]
+            except Exception as e:
+                print(f"Study plan cache lookup failed: {e}")
+        
+        # Generate study plan if not cached
+        if study_plan is None:
+            if USE_LOCAL_FALLBACK:
+                # Simple fallback: return a basic study plan structure
+                study_plan = {
+                    "overview": f"Study plan for {course_name}",
+                    "weekly_schedule": [
+                        "Review syllabus and course materials",
+                        "Complete assigned readings",
+                        "Work on assignments and projects",
+                        "Prepare for exams and quizzes"
+                    ],
+                    "study_tips": [
+                        "Start assignments early to avoid last-minute rush",
+                        "Form a study group with classmates",
+                        "Review notes regularly, not just before the exam",
+                        "Attend office hours if you need clarification",
+                        "Take care of your physical and mental health"
+                    ],
+                    "resource_recommendations": "Take advantage of tutoring services, online resources, and library materials available at your institution."
+                }
+            else:
+                study_plan = call_openrouter_to_generate_study_plan(data, course_name)
+            
+            # Cache the generated study plan
+            if file_hash and course_collection is not None:
+                try:
+                    course_collection.update_one(
+                        {"_id": file_hash},
+                        {"$set": {f"study_plans.{course_name}": study_plan}},
+                        upsert=False
+                    )
+                    print(f"Cached study plan for {course_name} (hash: {file_hash[:8]}...)")
+                except Exception as e:
+                    print(f"Study plan cache save failed: {e}")
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
