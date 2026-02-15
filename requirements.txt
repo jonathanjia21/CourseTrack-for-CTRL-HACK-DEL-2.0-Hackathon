@@ -6,3 +6,4 @@ python-dotenv>=0.19
 icalendar>=5.0
 pymongo[srv]
 requests
+haslib

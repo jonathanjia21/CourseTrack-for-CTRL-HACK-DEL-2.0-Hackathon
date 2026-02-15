@@ -3,7 +3,7 @@ import json
 import re
 from io import BytesIO
 from datetime import datetime
-
+import hashlib
 import requests
 from flask import Flask, request, jsonify, send_file, render_template
 from flask_cors import CORS
@@ -96,7 +96,7 @@ def parse_flexible_date(date_str: str, default_year: int = None) -> str:
 # ----------------------------
 # OpenRouter (Gemini) Call
 # ----------------------------
-def call_openrouter_to_extract_assignments(text: str) -> list:
+def call_openrouter_to_extract_assignments(text: str, file_hash: str) -> list:
 
     prompt_system = """
 You are replacing a production LLM.
@@ -139,6 +139,20 @@ Text:
 """
 
     try:
+        cached = course_collection.find_one(
+                                            {"_id": file_hash}
+                                            , {"_id": 0})
+        if cached:
+            raw = cached["assignments"]
+
+            # remove fences
+            raw = raw.replace("```json", "").replace("```", "").strip()
+
+            parsed = json.loads(raw)
+
+            return parsed
+
+
         response = requests.post(
             OPENROUTER_URL,
             headers={
@@ -161,6 +175,7 @@ Text:
 
         response.raise_for_status()
         data = response.json()
+
         content = data["choices"][0]["message"]["content"]
 
     except Exception as e:
@@ -168,6 +183,8 @@ Text:
 
     # Strict JSON parsing
     try:
+        
+        course_collection.insert_one({"_id": file_hash, "assignments": content})
         return json.loads(content)
     except Exception:
         start = content.find("[")
@@ -196,7 +213,9 @@ def extract_assignments():
 
     file = request.files["file"]
     pdf_bytes = file.read()
-
+    
+    file_hash = hashlib.md5(pdf_bytes).hexdigest()
+    
     text = extract_text_from_pdf_bytes(pdf_bytes)
     if not text.strip():
         return jsonify({"error": "no extractable text"}), 400
@@ -204,7 +223,7 @@ def extract_assignments():
     if USE_LOCAL_FALLBACK:
         items = parse_events_local(text)
     else:
-        items = call_openrouter_to_extract_assignments(text)
+        items = call_openrouter_to_extract_assignments(text, file_hash)
 
     return jsonify(items)
 
@@ -238,6 +257,8 @@ def pdf_to_ics_endpoint():
     file = request.files["file"]
     pdf_bytes = file.read()
 
+    file_hash = hashlib.md5(pdf_bytes).hexdigest()
+
     text = extract_text_from_pdf_bytes(pdf_bytes)
     if not text.strip():
         return jsonify({"error": "no extractable text"}), 400
@@ -245,7 +266,7 @@ def pdf_to_ics_endpoint():
     if USE_LOCAL_FALLBACK:
         items = parse_events_local(text)
     else:
-        items = call_openrouter_to_extract_assignments(text)
+        items = call_openrouter_to_extract_assignments(text, file_hash)
 
     course_name = request.args.get("course_name", "Course Assignments")
 
