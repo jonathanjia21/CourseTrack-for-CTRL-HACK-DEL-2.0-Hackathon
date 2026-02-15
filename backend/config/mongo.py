@@ -18,10 +18,7 @@ try:
     print("Pinged your deployment. You successfully connected to MongoDB!")
     db = client["courses"]
     course_collection = db["course_info"]
-    
-    # Create index on file_hash for fast lookups
-    course_collection.create_index("file_hash", unique=True)
-    print("MongoDB index created on file_hash")
+    print("MongoDB connected successfully.")
 except Exception as e:
-    print(f"MongoDB connection or index creation failed: {e}")
+    print(f"MongoDB connection failed: {e}")
     course_collection = None

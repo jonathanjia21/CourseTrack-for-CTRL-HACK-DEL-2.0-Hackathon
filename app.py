@@ -206,7 +206,7 @@ def extract_assignments():
     # Check cache first (if MongoDB is available)
     if course_collection is not None:
         try:
-            cached = course_collection.find_one({"file_hash": file_hash})
+            cached = course_collection.find_one({"_id": file_hash})
             if cached and "assignments" in cached:
                 print(f"Cache hit for {filename} (hash: {file_hash[:8]}...)")
                 return jsonify(cached["assignments"])
@@ -228,11 +228,9 @@ def extract_assignments():
     if course_collection is not None:
         try:
             course_collection.insert_one({
-                "file_hash": file_hash,
+                "_id": file_hash,
                 "filename": filename,
-                "assignments": items,
-                "extracted_at": datetime.utcnow(),
-                "method": "local" if USE_LOCAL_FALLBACK else "api"
+                "assignments": items
             })
             print(f"Cached assignments for {filename} (hash: {file_hash[:8]}...)")
         except DuplicateKeyError:
@@ -270,9 +268,29 @@ def pdf_to_ics_endpoint():
         return jsonify({"error": "missing file"}), 400
 
     file = request.files["file"]
+    filename = file.filename
     pdf_bytes = file.read()
 
-    file_hash = hashlib.md5(pdf_bytes).hexdigest()
+    # Generate SHA256 hash of PDF
+    file_hash = hashlib.sha256(pdf_bytes).hexdigest()
+
+    # Check cache first
+    if course_collection is not None:
+        try:
+            cached = course_collection.find_one({"_id": file_hash})
+            if cached and "assignments" in cached:
+                print(f"Cache hit for {filename} (hash: {file_hash[:8]}...)")
+                items = cached["assignments"]
+                course_name = request.args.get("course_name", "Course Assignments")
+                ics_content = json_to_ics(items, course_name)
+                return send_file(
+                    BytesIO(ics_content.encode('utf-8')),
+                    mimetype="text/calendar",
+                    as_attachment=True,
+                    download_name=f"{course_name}.ics"
+                )
+        except Exception as e:
+            print(f"Cache lookup failed: {e}")
 
     text = extract_text_from_pdf_bytes(pdf_bytes)
     if not text.strip():
@@ -281,7 +299,21 @@ def pdf_to_ics_endpoint():
     if USE_LOCAL_FALLBACK:
         items = parse_events_local(text)
     else:
-        items = call_openrouter_to_extract_assignments(text, file_hash)
+        items = call_openrouter_to_extract_assignments(text)
+
+    # Cache the result
+    if course_collection is not None:
+        try:
+            course_collection.insert_one({
+                "_id": file_hash,
+                "filename": filename,
+                "assignments": items,
+            })
+            print(f"Cached assignments for {filename} (hash: {file_hash[:8]}...)")
+        except DuplicateKeyError:
+            print(f"Cache already exists for {filename} (race condition)")
+        except Exception as e:
+            print(f"Cache save failed: {e}")
 
     course_name = request.args.get("course_name", "Course Assignments")
 
